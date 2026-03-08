@@ -1,0 +1,254 @@
+"""Tests for the AuditWriter."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+import yaml
+
+from app.engine.audit_writer import AuditEvent, AuditWriter
+from app.engine.policy_engine import PolicyEngine
+
+
+# ------------------------------------------------------------------
+# Fixtures
+# ------------------------------------------------------------------
+
+
+@pytest.fixture()
+def artifacts_dir(tmp_path: Path) -> Path:
+    return tmp_path / "artifacts"
+
+
+@pytest.fixture()
+def writer(artifacts_dir: Path) -> AuditWriter:
+    return AuditWriter(artifacts_dir=artifacts_dir)
+
+
+@pytest.fixture()
+def policy_dir(tmp_path: Path) -> Path:
+    pd = tmp_path / "policy"
+    pd.mkdir()
+    redaction = {
+        "rules": [
+            {
+                "pattern": r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
+                "replacement": "[REDACTED_EMAIL]",
+                "applies_to": ["audit_log"],
+            },
+            {
+                "pattern": r"\b\d{3}-\d{2}-\d{4}\b",
+                "replacement": "[REDACTED_SSN]",
+                "applies_to": ["audit_log", "run_bundle"],
+            },
+        ]
+    }
+    (pd / "redaction.yaml").write_text(yaml.dump(redaction), encoding="utf-8")
+    return pd
+
+
+@pytest.fixture()
+def writer_with_redaction(artifacts_dir: Path, policy_dir: Path) -> AuditWriter:
+    pe = PolicyEngine(policy_dir)
+    return AuditWriter(artifacts_dir=artifacts_dir, policy_engine=pe)
+
+
+# ------------------------------------------------------------------
+# AuditEvent
+# ------------------------------------------------------------------
+
+
+class TestAuditEvent:
+    def test_to_dict_excludes_none(self) -> None:
+        event = AuditEvent(timestamp="2025-01-01T00:00:00Z", event_type="agent_start")
+        d = event.to_dict()
+        assert "agent" not in d
+        assert "data" not in d
+        assert d["timestamp"] == "2025-01-01T00:00:00Z"
+        assert d["event_type"] == "agent_start"
+
+    def test_to_dict_includes_all_fields(self) -> None:
+        event = AuditEvent(
+            timestamp="2025-01-01T00:00:00Z",
+            event_type="tool_call",
+            agent="retriever",
+            data={"tool": "web_search"},
+        )
+        d = event.to_dict()
+        assert d["agent"] == "retriever"
+        assert d["data"]["tool"] == "web_search"
+
+
+# ------------------------------------------------------------------
+# JSONL append & read
+# ------------------------------------------------------------------
+
+
+class TestAppendAndRead:
+    def test_append_creates_directory_and_file(self, writer: AuditWriter, artifacts_dir: Path) -> None:
+        event = AuditEvent(timestamp="t1", event_type="agent_start", agent="scout")
+        writer.append("run-001", event)
+        log_path = artifacts_dir / "runs" / "run-001" / "audit.jsonl"
+        assert log_path.exists()
+
+    def test_single_append_writes_valid_json_line(self, writer: AuditWriter) -> None:
+        event = AuditEvent(timestamp="t1", event_type="agent_start", agent="scout")
+        writer.append("run-001", event)
+        events = writer.read_log("run-001")
+        assert len(events) == 1
+        assert events[0]["event_type"] == "agent_start"
+
+    def test_multiple_appends_in_order(self, writer: AuditWriter) -> None:
+        for i in range(5):
+            event = AuditEvent(timestamp=f"t{i}", event_type="agent_start", agent=f"agent_{i}")
+            writer.append("run-002", event)
+        events = writer.read_log("run-002")
+        assert len(events) == 5
+        assert [e["agent"] for e in events] == [f"agent_{i}" for i in range(5)]
+
+    def test_read_log_nonexistent_run_returns_empty(self, writer: AuditWriter) -> None:
+        events = writer.read_log("nonexistent-run")
+        assert events == []
+
+    def test_each_line_is_valid_json(self, writer: AuditWriter, artifacts_dir: Path) -> None:
+        for i in range(3):
+            event = AuditEvent(timestamp=f"t{i}", event_type="output", data={"value": i})
+            writer.append("run-003", event)
+        log_path = artifacts_dir / "runs" / "run-003" / "audit.jsonl"
+        lines = log_path.read_text(encoding="utf-8").strip().split("\n")
+        assert len(lines) == 3
+        for line in lines:
+            parsed = json.loads(line)
+            assert "timestamp" in parsed
+
+
+# ------------------------------------------------------------------
+# Bundle creation & reading
+# ------------------------------------------------------------------
+
+
+class TestBundle:
+    def test_create_bundle_writes_file(self, writer: AuditWriter, artifacts_dir: Path) -> None:
+        path = writer.create_run_bundle(
+            run_id="run-100",
+            profile_hash="ph123",
+            policy_version_hash="pv456",
+            verifier_report={"overall_status": "pass"},
+            final_artifacts={"opportunities": []},
+        )
+        assert path.exists()
+        assert path.name == "bundle.json"
+
+    def test_read_bundle_returns_contents(self, writer: AuditWriter) -> None:
+        writer.create_run_bundle(
+            run_id="run-101",
+            profile_hash="ph123",
+            policy_version_hash="pv456",
+            verifier_report={"overall_status": "pass"},
+            final_artifacts={"opportunities": [{"title": "SWE"}]},
+            intermediate_outputs=[{"step": 1}],
+        )
+        bundle = writer.read_bundle("run-101")
+        assert bundle is not None
+        assert bundle["run_id"] == "run-101"
+        assert bundle["profile_hash"] == "ph123"
+        assert bundle["policy_version_hash"] == "pv456"
+        assert bundle["verifier_report"]["overall_status"] == "pass"
+        assert len(bundle["final_artifacts"]["opportunities"]) == 1
+        assert len(bundle["intermediate_outputs"]) == 1
+        assert "created_at" in bundle
+
+    def test_read_bundle_nonexistent_returns_none(self, writer: AuditWriter) -> None:
+        result = writer.read_bundle("nonexistent-run")
+        assert result is None
+
+    def test_bundle_intermediate_defaults_empty(self, writer: AuditWriter) -> None:
+        writer.create_run_bundle(
+            run_id="run-102",
+            profile_hash="ph",
+            policy_version_hash="pv",
+            verifier_report={},
+            final_artifacts={},
+        )
+        bundle = writer.read_bundle("run-102")
+        assert bundle["intermediate_outputs"] == []
+
+
+# ------------------------------------------------------------------
+# PII redaction in audit log
+# ------------------------------------------------------------------
+
+
+class TestRedaction:
+    def test_email_redacted_in_audit_log(self, writer_with_redaction: AuditWriter) -> None:
+        event = AuditEvent(
+            timestamp="t1",
+            event_type="output",
+            data={"contact": "user@example.com"},
+        )
+        writer_with_redaction.append("run-redact-1", event)
+        events = writer_with_redaction.read_log("run-redact-1")
+        raw = json.dumps(events[0])
+        assert "user@example.com" not in raw
+        assert "[REDACTED_EMAIL]" in raw
+
+    def test_ssn_redacted_in_audit_log(self, writer_with_redaction: AuditWriter) -> None:
+        event = AuditEvent(
+            timestamp="t1",
+            event_type="output",
+            data={"ssn": "123-45-6789"},
+        )
+        writer_with_redaction.append("run-redact-2", event)
+        events = writer_with_redaction.read_log("run-redact-2")
+        raw = json.dumps(events[0])
+        assert "123-45-6789" not in raw
+        assert "[REDACTED_SSN]" in raw
+
+    def test_ssn_redacted_in_bundle(self, writer_with_redaction: AuditWriter) -> None:
+        writer_with_redaction.create_run_bundle(
+            run_id="run-redact-3",
+            profile_hash="ph",
+            policy_version_hash="pv",
+            verifier_report={},
+            final_artifacts={"note": "SSN is 123-45-6789"},
+        )
+        bundle = writer_with_redaction.read_bundle("run-redact-3")
+        raw = json.dumps(bundle)
+        assert "123-45-6789" not in raw
+        assert "[REDACTED_SSN]" in raw
+
+    def test_no_redaction_without_policy_engine(self, writer: AuditWriter) -> None:
+        event = AuditEvent(
+            timestamp="t1",
+            event_type="output",
+            data={"contact": "user@example.com"},
+        )
+        writer.append("run-no-redact", event)
+        events = writer.read_log("run-no-redact")
+        raw = json.dumps(events[0])
+        assert "user@example.com" in raw
+
+
+# ------------------------------------------------------------------
+# hash_content
+# ------------------------------------------------------------------
+
+
+class TestHashContent:
+    def test_deterministic(self) -> None:
+        h1 = AuditWriter.hash_content("hello world")
+        h2 = AuditWriter.hash_content("hello world")
+        assert h1 == h2
+
+    def test_different_inputs_different_hashes(self) -> None:
+        h1 = AuditWriter.hash_content("hello")
+        h2 = AuditWriter.hash_content("world")
+        assert h1 != h2
+
+    def test_returns_hex_string(self) -> None:
+        h = AuditWriter.hash_content("test")
+        assert isinstance(h, str)
+        assert len(h) == 64  # SHA-256 hex digest
+        int(h, 16)  # should not raise
