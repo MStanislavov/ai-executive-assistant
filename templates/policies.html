@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Policies - AI Executive Assistant{% endblock %}
+{% block content %}
+<h1>Policies</h1>
+<p style="margin-bottom: 1rem; opacity: 0.7;">Policy files are read-only and versioned via git.</p>
+
+{% if policies|length == 0 %}
+<div class="card">
+    <p style="opacity: 0.6;">No policy files found in the policy directory.</p>
+</div>
+{% else %}
+{% for policy in policies %}
+<details class="card" style="cursor: default;" {% if loop.first %}open{% endif %}>
+    <summary style="cursor: pointer; font-weight: 600; font-size: 1.1rem;">
+        {{ policy.name }}.yaml
+    </summary>
+    <pre style="background: #f1f5f9; padding: 1rem; border-radius: 4px; margin-top: 0.75rem; overflow-x: auto; font-size: 0.85rem; line-height: 1.5;">{{ policy.content }}</pre>
+</details>
+{% endfor %}
+{% endif %}
+{% endblock %}

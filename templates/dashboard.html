@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - AI Executive Assistant{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+
+<!-- Create Profile -->
+<div class="card">
+    <h2 style="margin-bottom: 0.75rem;">Create New Profile</h2>
+    <form id="create-profile-form" onsubmit="return createProfile(event);">
+        <div class="form-group">
+            <label for="new-profile-name">Name</label>
+            <input type="text" id="new-profile-name" name="name" required placeholder="e.g. Architect, Developer">
+        </div>
+        <button type="submit" class="btn">Create Profile</button>
+    </form>
+    <script>
+    function createProfile(e) {
+        e.preventDefault();
+        var name = document.getElementById('new-profile-name').value.trim();
+        if (!name) return false;
+        fetch('/api/profiles', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: name})
+        }).then(function(resp) {
+            if (resp.ok) { window.location.reload(); }
+            else { showToast('Error creating profile', true); }
+        }).catch(function() { showToast('Error creating profile', true); });
+        return false;
+    }
+    </script>
+</div>
+
+<!-- Profile Cards -->
+<h2 style="margin-top: 1.5rem; margin-bottom: 0.75rem;">Profiles</h2>
+{% if profiles|length == 0 %}
+<p style="opacity: 0.6;">No profiles yet. Create one above to get started.</p>
+{% else %}
+<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem;">
+    {% for p in profiles %}
+    <div class="card">
+        <h3 style="margin-bottom: 0.5rem;">
+            <a href="/profiles/{{ p.id }}" style="color: var(--primary); text-decoration: none;">{{ p.name }}</a>
+        </h3>
+        {% set skills = parse_json_list(p.skills) %}
+        {% if skills %}
+        <p style="font-size: 0.85rem; opacity: 0.7; margin-bottom: 0.5rem;">
+            {{ skills[:3]|join(', ') }}{% if skills|length > 3 %} +{{ skills|length - 3 }} more{% endif %}
+        </p>
+        {% endif %}
+        <p style="font-size: 0.8rem; opacity: 0.5;">Created {{ p.created_at.strftime('%Y-%m-%d') }}</p>
+        <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
+            <a href="/profiles/{{ p.id }}" class="btn" style="font-size: 0.8rem;">Edit</a>
+            <a href="/profiles/{{ p.id }}/runs" class="btn" style="font-size: 0.8rem; background: #059669;">Runs</a>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Recent Runs -->
+<h2 style="margin-top: 1.5rem; margin-bottom: 0.75rem;">Recent Runs</h2>
+{% if recent_runs|length == 0 %}
+<p style="opacity: 0.6;">No runs yet.</p>
+{% else %}
+<table>
+    <thead>
+        <tr>
+            <th>Profile</th>
+            <th>Mode</th>
+            <th>Status</th>
+            <th>Verifier</th>
+            <th>Started</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for run in recent_runs %}
+        <tr>
+            <td>{{ profile_names.get(run.profile_id, 'Unknown') }}</td>
+            <td>{{ run.mode }}</td>
+            <td>
+                {% if run.status == 'completed' %}
+                <span class="badge badge-pass">completed</span>
+                {% elif run.status == 'running' %}
+                <span class="badge badge-running">running</span>
+                {% elif run.status == 'failed' %}
+                <span class="badge badge-fail">failed</span>
+                {% elif run.status == 'cancelled' %}
+                <span class="badge badge-partial">cancelled</span>
+                {% else %}
+                <span class="badge">{{ run.status }}</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if run.verifier_status == 'pass' %}
+                <span class="badge badge-pass">pass</span>
+                {% elif run.verifier_status == 'fail' %}
+                <span class="badge badge-fail">fail</span>
+                {% elif run.verifier_status == 'partial' %}
+                <span class="badge badge-partial">partial</span>
+                {% elif run.verifier_status %}
+                <span class="badge">{{ run.verifier_status }}</span>
+                {% else %}
+                <span style="opacity: 0.4;">--</span>
+                {% endif %}
+            </td>
+            <td>{{ run.started_at.strftime('%Y-%m-%d %H:%M') if run.started_at else '--' }}</td>
+            <td><a href="/profiles/{{ run.profile_id }}/runs/{{ run.id }}" style="color: var(--primary);">View</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}

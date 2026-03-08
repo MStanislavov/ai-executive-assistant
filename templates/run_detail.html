@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block title %}Run {{ run.id[:8] }} - AI Executive Assistant{% endblock %}
+{% block content %}
+<h1>Run Detail</h1>
+
+<p style="margin-bottom: 0.5rem;">
+    <a href="/profiles/{{ profile.id }}/runs" style="color: var(--primary);">Back to runs</a>
+</p>
+
+<!-- Run Header -->
+<div class="card">
+    <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
+        <div>
+            <strong>Run ID:</strong> <code>{{ run.id[:12] }}...</code>
+        </div>
+        <div>
+            <strong>Mode:</strong> {{ run.mode }}
+        </div>
+        <div>
+            <strong>Status:</strong>
+            {% if run.status == 'completed' %}
+            <span class="badge badge-pass">completed</span>
+            {% elif run.status == 'running' %}
+            <span class="badge badge-running">running</span>
+            {% elif run.status == 'failed' %}
+            <span class="badge badge-fail">failed</span>
+            {% elif run.status == 'cancelled' %}
+            <span class="badge badge-partial">cancelled</span>
+            {% else %}
+            <span class="badge">{{ run.status }}</span>
+            {% endif %}
+        </div>
+        <div>
+            <strong>Verifier:</strong>
+            {% if run.verifier_status == 'pass' %}
+            <span class="badge badge-pass">pass</span>
+            {% elif run.verifier_status == 'fail' %}
+            <span class="badge badge-fail">fail</span>
+            {% elif run.verifier_status == 'partial' %}
+            <span class="badge badge-partial">partial</span>
+            {% elif run.verifier_status %}
+            <span class="badge">{{ run.verifier_status }}</span>
+            {% else %}
+            <span style="opacity: 0.4;">--</span>
+            {% endif %}
+        </div>
+    </div>
+    <div style="display: flex; gap: 2rem; margin-top: 0.5rem; font-size: 0.9rem; opacity: 0.7;">
+        <div>Started: {{ run.started_at.strftime('%Y-%m-%d %H:%M:%S') if run.started_at else '--' }}</div>
+        <div>Finished: {{ run.finished_at.strftime('%Y-%m-%d %H:%M:%S') if run.finished_at else '--' }}</div>
+    </div>
+
+    {% if run.status == 'running' %}
+    <div style="margin-top: 1rem;">
+        <button class="btn" style="background: #dc2626;"
+                hx-post="/api/profiles/{{ profile.id }}/runs/{{ run.id }}/cancel"
+                hx-swap="none"
+                hx-on::after-request="if(event.detail.successful){ window.location.reload(); }">
+            Cancel Run
+        </button>
+    </div>
+    {% endif %}
+</div>
+
+<!-- SSE Progress (visible when running) -->
+{% if run.status == 'running' or run.status == 'pending' %}
+<div class="card" id="sse-progress">
+    <h3 style="margin-bottom: 0.5rem;">Live Progress</h3>
+    <div class="progress-bar" style="margin-bottom: 0.5rem;">
+        <div class="fill" id="progress-fill" style="width: 10%;"></div>
+    </div>
+    <div id="sse-events" style="font-size: 0.85rem; max-height: 200px; overflow-y: auto;"></div>
+</div>
+<script>
+(function() {
+    var container = document.getElementById('sse-progress');
+    if (!container) return;
+    var source = new EventSource('/api/profiles/{{ profile.id }}/runs/{{ run.id }}/stream');
+    var fill = document.getElementById('progress-fill');
+    var eventsDiv = document.getElementById('sse-events');
+    var step = 10;
+    source.onmessage = function(event) {
+        try {
+            var data = JSON.parse(event.data);
+            step = Math.min(step + 15, 95);
+            fill.style.width = step + '%';
+            var p = document.createElement('p');
+            p.textContent = (data.type || 'event') + ' - ' + (data.timestamp || '');
+            eventsDiv.appendChild(p);
+            eventsDiv.scrollTop = eventsDiv.scrollHeight;
+
+            if (data.type === 'run_finished' || data.type === 'run_failed' || data.type === 'run_cancelled') {
+                fill.style.width = '100%';
+                source.close();
+                setTimeout(function(){ window.location.reload(); }, 1000);
+            }
+        } catch(e) {}
+    };
+    source.onerror = function() {
+        source.close();
+    };
+})();
+</script>
+{% endif %}
+
+<!-- Tabs -->
+<div class="tabs" style="margin-top: 1.5rem;">
+    <button class="active" onclick="showTab('outputs', this)">Outputs</button>
+    <button onclick="showTab('audit', this)">Audit Trail</button>
+    <button onclick="showTab('verifier', this)">Verifier Report</button>
+</div>
+
+<!-- Outputs Tab -->
+<div id="tab-outputs" class="tab-panel">
+    {% if bundle and bundle.get('final_artifacts') %}
+    <div class="card">
+        <h3 style="margin-bottom: 0.5rem;">Final Artifacts</h3>
+        <pre style="background: #f1f5f9; padding: 1rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem;">{{ bundle['final_artifacts'] | tojson(indent=2) }}</pre>
+    </div>
+    {% else %}
+    <div class="card">
+        <p style="opacity: 0.6;">No output artifacts available{% if run.status == 'running' %} yet (run in progress){% endif %}.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Audit Tab -->
+<div id="tab-audit" class="tab-panel" style="display: none;">
+    {% if audit_events|length > 0 %}
+    <div class="card">
+        <h3 style="margin-bottom: 0.75rem;">Audit Timeline ({{ audit_events|length }} events)</h3>
+        <div style="border-left: 3px solid var(--primary); padding-left: 1rem;">
+            {% for event in audit_events %}
+            <div style="margin-bottom: 1rem; position: relative;">
+                <div style="position: absolute; left: -1.35rem; top: 0.2rem; width: 10px; height: 10px; background: var(--primary); border-radius: 50%;"></div>
+                <div style="font-size: 0.8rem; opacity: 0.6;">{{ event.get('timestamp', '') }}</div>
+                <div style="font-weight: 600;">{{ event.get('event_type', 'unknown') }}{% if event.get('agent') %} - {{ event.get('agent') }}{% endif %}</div>
+                {% if event.get('data') %}
+                <pre style="background: #f1f5f9; padding: 0.5rem; border-radius: 4px; font-size: 0.8rem; margin-top: 0.25rem; overflow-x: auto;">{{ event['data'] | tojson(indent=2) }}</pre>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% else %}
+    <div class="card">
+        <p style="opacity: 0.6;">No audit events recorded{% if run.status == 'running' %} yet{% endif %}.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Verifier Tab -->
+<div id="tab-verifier" class="tab-panel" style="display: none;">
+    {% if verifier_report %}
+    <div class="card">
+        <h3 style="margin-bottom: 0.75rem;">Verifier Report</h3>
+        {% if verifier_report.get('overall_status') %}
+        <p style="margin-bottom: 0.75rem;">
+            Overall:
+            {% if verifier_report['overall_status'] == 'pass' %}
+            <span class="badge badge-pass">PASS</span>
+            {% elif verifier_report['overall_status'] == 'fail' %}
+            <span class="badge badge-fail">FAIL</span>
+            {% elif verifier_report['overall_status'] == 'partial' %}
+            <span class="badge badge-partial">PARTIAL</span>
+            {% else %}
+            <span class="badge">{{ verifier_report['overall_status'] }}</span>
+            {% endif %}
+        </p>
+        {% endif %}
+        {% if verifier_report.get('checks') %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Check</th>
+                    <th>Status</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for check in verifier_report['checks'] %}
+                <tr>
+                    <td>{{ check.get('name', 'unnamed') }}</td>
+                    <td>
+                        {% if check.get('status') == 'pass' %}
+                        <span class="badge badge-pass">pass</span>
+                        {% elif check.get('status') == 'fail' %}
+                        <span class="badge badge-fail">fail</span>
+                        {% else %}
+                        <span class="badge badge-partial">{{ check.get('status', '?') }}</span>
+                        {% endif %}
+                    </td>
+                    <td style="font-size: 0.85rem;">{{ check.get('detail', '--') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <pre style="background: #f1f5f9; padding: 1rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem;">{{ verifier_report | tojson(indent=2) }}</pre>
+        {% endif %}
+    </div>
+    {% else %}
+    <div class="card">
+        <p style="opacity: 0.6;">No verifier report available{% if run.status == 'running' %} yet{% endif %}.</p>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function showTab(name, btn) {
+    document.querySelectorAll('.tab-panel').forEach(function(el){ el.style.display = 'none'; });
+    document.querySelectorAll('.tabs button').forEach(function(el){ el.classList.remove('active'); });
+    document.getElementById('tab-' + name).style.display = 'block';
+    btn.classList.add('active');
+}
+</script>
+{% endblock %}

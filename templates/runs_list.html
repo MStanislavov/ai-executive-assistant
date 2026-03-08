@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Runs - {{ profile.name }} - AI Executive Assistant{% endblock %}
+{% block content %}
+<h1>Runs for {{ profile.name }}</h1>
+
+<!-- Start New Run -->
+<div class="card" style="margin-bottom: 1.5rem;">
+    <h2 style="margin-bottom: 0.75rem;">Start New Run</h2>
+    <form id="new-run-form" style="display: flex; gap: 0.75rem; align-items: flex-end;">
+        <div class="form-group" style="margin-bottom: 0;">
+            <label for="run-mode">Mode</label>
+            <select id="run-mode" name="mode" style="width: auto; min-width: 150px;">
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="cover_letter">Cover Letter</option>
+            </select>
+        </div>
+        <button type="button" class="btn" onclick="startRun()">Start Run</button>
+    </form>
+</div>
+
+<!-- Runs Table -->
+{% if runs|length == 0 %}
+<p style="opacity: 0.6;">No runs yet for this profile. Start one above.</p>
+{% else %}
+<table>
+    <thead>
+        <tr>
+            <th>Mode</th>
+            <th>Status</th>
+            <th>Verifier</th>
+            <th>Started</th>
+            <th>Finished</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for run in runs %}
+        <tr>
+            <td>{{ run.mode }}</td>
+            <td>
+                {% if run.status == 'completed' %}
+                <span class="badge badge-pass">completed</span>
+                {% elif run.status == 'running' %}
+                <span class="badge badge-running">running</span>
+                {% elif run.status == 'failed' %}
+                <span class="badge badge-fail">failed</span>
+                {% elif run.status == 'cancelled' %}
+                <span class="badge badge-partial">cancelled</span>
+                {% else %}
+                <span class="badge">{{ run.status }}</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if run.verifier_status == 'pass' %}
+                <span class="badge badge-pass">pass</span>
+                {% elif run.verifier_status == 'fail' %}
+                <span class="badge badge-fail">fail</span>
+                {% elif run.verifier_status == 'partial' %}
+                <span class="badge badge-partial">partial</span>
+                {% elif run.verifier_status %}
+                <span class="badge">{{ run.verifier_status }}</span>
+                {% else %}
+                <span style="opacity: 0.4;">--</span>
+                {% endif %}
+            </td>
+            <td>{{ run.started_at.strftime('%Y-%m-%d %H:%M') if run.started_at else '--' }}</td>
+            <td>{{ run.finished_at.strftime('%Y-%m-%d %H:%M') if run.finished_at else '--' }}</td>
+            <td>
+                <a href="/profiles/{{ profile.id }}/runs/{{ run.id }}" style="color: var(--primary);">Details</a>
+                {% if run.status == 'running' %}
+                <button class="btn" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: #dc2626; margin-left: 0.5rem;"
+                        hx-post="/api/profiles/{{ profile.id }}/runs/{{ run.id }}/cancel"
+                        hx-swap="none"
+                        hx-on::after-request="if(event.detail.successful){ window.location.reload(); }">
+                    Cancel
+                </button>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<script>
+function startRun() {
+    var mode = document.getElementById('run-mode').value;
+    fetch('/api/profiles/{{ profile.id }}/runs', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({mode: mode})
+    }).then(function(resp) {
+        if (resp.ok) {
+            return resp.json();
+        }
+        throw new Error('Failed to start run');
+    }).then(function(data) {
+        window.location.href = '/profiles/{{ profile.id }}/runs/' + data.id;
+    }).catch(function() {
+        showToast('Error starting run', true);
+    });
+}
+</script>
+{% endblock %}

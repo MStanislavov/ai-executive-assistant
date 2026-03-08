@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Cover Letters - {{ profile.name }} - AI Executive Assistant{% endblock %}
+{% block content %}
+<h1>Cover Letters for {{ profile.name }}</h1>
+
+<p style="margin-bottom: 1rem;">
+    <a href="/profiles/{{ profile.id }}" style="color: var(--primary);">Back to profile</a>
+</p>
+
+{% if cover_letters|length == 0 %}
+<div class="card">
+    <p style="opacity: 0.6;">No cover letters generated yet. Use the cover letter pipeline to create one.</p>
+    <a href="/profiles/{{ profile.id }}/runs" class="btn" style="margin-top: 0.75rem; display: inline-block;">Go to Runs</a>
+</div>
+{% else %}
+<table>
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Created</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for letter in cover_letters %}
+        <tr>
+            <td>{{ letter.title }}</td>
+            <td>{{ letter.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td>
+                <details>
+                    <summary style="cursor: pointer; color: var(--primary);">View</summary>
+                    <pre style="background: #f1f5f9; padding: 1rem; border-radius: 4px; margin-top: 0.5rem; white-space: pre-wrap; font-size: 0.85rem;">{{ letter.content }}</pre>
+                </details>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}

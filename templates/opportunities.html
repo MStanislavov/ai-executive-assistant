@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Opportunities - {{ profile.name }} - AI Executive Assistant{% endblock %}
+{% block content %}
+<h1>Opportunities for {{ profile.name }}</h1>
+
+<p style="margin-bottom: 1rem;">
+    <a href="/profiles/{{ profile.id }}" style="color: var(--primary);">Back to profile</a>
+</p>
+
+{% if opportunities|length == 0 %}
+<div class="card">
+    <p style="opacity: 0.6;">No opportunities found yet. Run a daily or weekly pipeline to discover opportunities.</p>
+    <a href="/profiles/{{ profile.id }}/runs" class="btn" style="margin-top: 0.75rem; display: inline-block;">Go to Runs</a>
+</div>
+{% else %}
+<table>
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Type</th>
+            <th>Created</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for opp in opportunities %}
+        <tr>
+            <td>{{ opp.title }}</td>
+            <td>{{ opp.artifact_type }}</td>
+            <td>{{ opp.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}

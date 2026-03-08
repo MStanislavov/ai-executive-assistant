@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}{{ profile.name }} - AI Executive Assistant{% endblock %}
+{% block content %}
+<h1>Profile: {{ profile.name }}</h1>
+
+<div style="display: flex; gap: 0.75rem; margin-bottom: 1.5rem;">
+    <a href="/profiles/{{ profile.id }}/runs" class="btn" style="background: #059669;">Runs</a>
+    <a href="/profiles/{{ profile.id }}/opportunities" class="btn" style="background: #7c3aed;">Opportunities</a>
+    <a href="/profiles/{{ profile.id }}/cover-letters" class="btn" style="background: #b45309;">Cover Letters</a>
+</div>
+
+<!-- Profile Edit Form -->
+<div class="card">
+    <h2 style="margin-bottom: 0.75rem;">Edit Profile</h2>
+    <div id="profile-form-result"></div>
+    <form id="profile-edit-form">
+        <div class="form-group">
+            <label for="profile-name">Name</label>
+            <input type="text" id="profile-name" name="name" value="{{ profile.name }}" required>
+        </div>
+        <div class="form-group">
+            <label for="profile-targets">Targets (one per line)</label>
+            <textarea id="profile-targets" name="targets">{{ targets|join('\n') }}</textarea>
+        </div>
+        <div class="form-group">
+            <label for="profile-constraints">Constraints (one per line)</label>
+            <textarea id="profile-constraints" name="constraints">{{ constraints|join('\n') }}</textarea>
+        </div>
+        <div class="form-group">
+            <label for="profile-skills">Skills (one per line)</label>
+            <textarea id="profile-skills" name="skills">{{ skills|join('\n') }}</textarea>
+        </div>
+        <button type="button" class="btn" onclick="saveProfile()">Save Changes</button>
+    </form>
+</div>
+
+<!-- CV Upload -->
+<div class="card" style="margin-top: 1rem;">
+    <h2 style="margin-bottom: 0.75rem;">CV Upload</h2>
+    {% if profile.cv_path %}
+    <p style="margin-bottom: 0.75rem; font-size: 0.9rem;">
+        Current CV: <code>{{ profile.cv_path.split('/')[-1] if '/' in (profile.cv_path or '') else profile.cv_path.split('\\')[-1] if profile.cv_path else 'None' }}</code>
+    </p>
+    {% else %}
+    <p style="margin-bottom: 0.75rem; opacity: 0.6; font-size: 0.9rem;">No CV uploaded yet.</p>
+    {% endif %}
+    <form hx-post="/api/profiles/{{ profile.id }}/cv"
+          hx-encoding="multipart/form-data"
+          hx-swap="none"
+          hx-on::after-request="if(event.detail.successful){ showToast('CV uploaded'); setTimeout(function(){ window.location.reload(); }, 500); }"
+          data-success-msg="CV uploaded">
+        <div class="form-group">
+            <input type="file" name="file" accept=".pdf,.doc,.docx,.txt" required>
+        </div>
+        <button type="submit" class="btn" style="background: #059669;">Upload CV</button>
+    </form>
+</div>
+
+<!-- Delete Profile -->
+<div class="card" style="margin-top: 1rem; border-color: #fca5a5;">
+    <h2 style="margin-bottom: 0.75rem; color: #991b1b;">Danger Zone</h2>
+    <button class="btn" style="background: #dc2626;"
+            hx-delete="/api/profiles/{{ profile.id }}"
+            hx-confirm="Are you sure you want to delete this profile? This cannot be undone."
+            hx-swap="none"
+            hx-on::after-request="if(event.detail.successful){ window.location.href='/'; }">
+        Delete Profile
+    </button>
+</div>
+
+<script>
+function saveProfile() {
+    var name = document.getElementById('profile-name').value;
+    var targets = document.getElementById('profile-targets').value.split('\n').filter(function(s){ return s.trim() !== ''; });
+    var constraints = document.getElementById('profile-constraints').value.split('\n').filter(function(s){ return s.trim() !== ''; });
+    var skills = document.getElementById('profile-skills').value.split('\n').filter(function(s){ return s.trim() !== ''; });
+
+    fetch('/api/profiles/{{ profile.id }}', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            name: name,
+            targets: targets.length ? targets : null,
+            constraints: constraints.length ? constraints : null,
+            skills: skills.length ? skills : null
+        })
+    }).then(function(resp) {
+        if (resp.ok) {
+            showToast('Profile saved');
+        } else {
+            showToast('Error saving profile', true);
+        }
+    }).catch(function() {
+        showToast('Error saving profile', true);
+    });
+}
+</script>
+{% endblock %}
