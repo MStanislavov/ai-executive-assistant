@@ -49,7 +49,7 @@ def _make_goal_extractor_node(
         node_start(_P, state, "goal_extractor")
         run_id = state.get("run_id", "unknown")
         if audit_writer:
-            audit_writer.append(run_id, AuditEvent(
+            await audit_writer.append(run_id, AuditEvent(
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 event_type="agent_start", agent="goal_extractor",
             ))
@@ -57,7 +57,7 @@ def _make_goal_extractor_node(
         result = await call_agent(agent, state)
         node_end(_P, state, "goal_extractor", time.monotonic() - t0)
         if audit_writer:
-            audit_writer.append(run_id, AuditEvent(
+            await audit_writer.append(run_id, AuditEvent(
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 event_type="agent_end", agent="goal_extractor",
                 data=result,
@@ -78,7 +78,7 @@ def _make_fan_out_web_scrapers(
         node_start(_P, state, "web_scrapers", prompts=len(prompts))
         run_id = state.get("run_id", "unknown")
         if audit_writer:
-            audit_writer.append(run_id, AuditEvent(
+            await audit_writer.append(run_id, AuditEvent(
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 event_type="agent_start", agent="web_scrapers",
                 data={"prompts": prompts},
@@ -121,7 +121,7 @@ def _make_fan_out_web_scrapers(
             trends=len(results.get("raw_trend_results", [])),
         )
         if audit_writer:
-            audit_writer.append(run_id, AuditEvent(
+            await audit_writer.append(run_id, AuditEvent(
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 event_type="agent_end", agent="web_scrapers",
                 data=results,
@@ -145,7 +145,7 @@ def _make_data_formatter_node(
         node_start(_P, state, "data_formatter")
         run_id = state.get("run_id", "unknown")
         if audit_writer:
-            audit_writer.append(run_id, AuditEvent(
+            await audit_writer.append(run_id, AuditEvent(
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 event_type="agent_start", agent="data_formatter",
             ))
@@ -161,7 +161,7 @@ def _make_data_formatter_node(
             trends=len(result.get("formatted_trends", [])),
         )
         if audit_writer:
-            audit_writer.append(run_id, AuditEvent(
+            await audit_writer.append(run_id, AuditEvent(
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 event_type="agent_end", agent="data_formatter",
                 data=result,
@@ -181,7 +181,7 @@ def _make_ceo_node(
         node_start(_P, state, "ceo")
         run_id = state.get("run_id", "unknown")
         if audit_writer:
-            audit_writer.append(run_id, AuditEvent(
+            await audit_writer.append(run_id, AuditEvent(
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 event_type="agent_start", agent="ceo",
             ))
@@ -192,7 +192,7 @@ def _make_ceo_node(
             recommendations=len(result.get("strategic_recommendations", [])),
         )
         if audit_writer:
-            audit_writer.append(run_id, AuditEvent(
+            await audit_writer.append(run_id, AuditEvent(
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 event_type="agent_end", agent="ceo",
                 data=result,
@@ -212,7 +212,7 @@ def _make_cfo_node(
         node_start(_P, state, "cfo")
         run_id = state.get("run_id", "unknown")
         if audit_writer:
-            audit_writer.append(run_id, AuditEvent(
+            await audit_writer.append(run_id, AuditEvent(
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 event_type="agent_start", agent="cfo",
             ))
@@ -223,7 +223,7 @@ def _make_cfo_node(
             assessments=len(result.get("risk_assessments", [])),
         )
         if audit_writer:
-            audit_writer.append(run_id, AuditEvent(
+            await audit_writer.append(run_id, AuditEvent(
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 event_type="agent_end", agent="cfo",
                 data=result,
@@ -237,7 +237,7 @@ def _make_audit_node(
     audit_writer: AuditWriter | None = None,
     policy_engine: PolicyEngine | None = None,
 ):
-    def audit_node(state: WeeklyState) -> dict[str, Any]:
+    async def audit_node(state: WeeklyState) -> dict[str, Any]:
         if audit_writer is None:
             node_start(_P, state, "audit_writer", skipped=True)
             return {}
@@ -248,7 +248,7 @@ def _make_audit_node(
         run_id = state.get("run_id", "unknown")
         policy_hash = policy_engine.version.hash if policy_engine else ""
 
-        audit_writer.append(
+        await audit_writer.append(
             run_id,
             AuditEvent(
                 timestamp=datetime.now(timezone.utc).isoformat(),
@@ -266,7 +266,7 @@ def _make_audit_node(
                 },
             ),
         )
-        audit_writer.create_run_bundle(
+        await audit_writer.create_run_bundle(
             run_id=run_id,
             profile_hash=state.get("profile_id", "unknown"),
             policy_version_hash=policy_hash,

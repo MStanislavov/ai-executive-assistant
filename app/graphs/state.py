@@ -84,6 +84,10 @@ class WeeklyState(TypedDict, total=False):
 class CoverLetterState(TypedDict, total=False):
     # Input
     profile_id: str
+    profile_name: str
+    profile_targets: list[str]
+    profile_skills: list[str]
+    profile_constraints: list[str]
     cv_content: str
     jd_text: str
     job_opportunity: dict[str, Any]

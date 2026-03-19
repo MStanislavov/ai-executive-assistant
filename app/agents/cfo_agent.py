@@ -12,7 +12,7 @@ from app.agents.schemas import CFOOutput
 class CFOAgent(LLMAgent):
     agent_name = "cfo"
 
-    def __call__(self, state: dict[str, Any]) -> dict[str, Any]:
+    async def __call__(self, state: dict[str, Any]) -> dict[str, Any]:
         if self._llm is None:
             return {
                 "risk_assessments": [
@@ -42,7 +42,7 @@ class CFOAgent(LLMAgent):
             f"Groups: {json.dumps(state.get('formatted_groups', []))}\n"
             f"Trends: {json.dumps(state.get('formatted_trends', []))}"
         )
-        result = self._invoke_structured(CFOOutput, system_prompt, user_content)
+        result = await self._invoke_structured(CFOOutput, system_prompt, user_content)
         return {
             "risk_assessments": [r.model_dump() for r in result.risk_assessments],
             "cfo_summary": result.cfo_summary,

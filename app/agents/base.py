@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable
 from typing import Any, Protocol
 
 from app.llm.prompt_loader import PromptLoader
@@ -11,11 +12,11 @@ logger = logging.getLogger(__name__)
 
 
 class AgentProtocol(Protocol):
-    """All agents must be callable: (state) -> state."""
+    """All agents must be callable: (state) -> state or awaitable state."""
 
     agent_name: str
 
-    def __call__(self, state: dict[str, Any]) -> dict[str, Any]: ...
+    def __call__(self, state: dict[str, Any]) -> dict[str, Any] | Awaitable[dict[str, Any]]: ...
 
 
 class LLMAgent:
@@ -36,7 +37,7 @@ class LLMAgent:
             return f"You are a helpful {self.agent_name} agent."
         return self._prompt_loader.load(self.agent_name, **kwargs)
 
-    def _invoke_structured(
+    async def _invoke_structured(
         self,
         schema: type,
         system_prompt: str,
@@ -48,4 +49,4 @@ class LLMAgent:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
         ]
-        return structured_llm.invoke(messages)
+        return await structured_llm.ainvoke(messages)

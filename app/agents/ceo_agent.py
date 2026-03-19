@@ -12,7 +12,7 @@ from app.agents.schemas import CEOOutput
 class CEOAgent(LLMAgent):
     agent_name = "ceo"
 
-    def __call__(self, state: dict[str, Any]) -> dict[str, Any]:
+    async def __call__(self, state: dict[str, Any]) -> dict[str, Any]:
         if self._llm is None:
             return {
                 "strategic_recommendations": [
@@ -40,7 +40,7 @@ class CEOAgent(LLMAgent):
             f"Groups: {json.dumps(state.get('formatted_groups', []))}\n"
             f"Trends: {json.dumps(state.get('formatted_trends', []))}"
         )
-        result = self._invoke_structured(CEOOutput, system_prompt, user_content)
+        result = await self._invoke_structured(CEOOutput, system_prompt, user_content)
         return {
             "strategic_recommendations": [r.model_dump() for r in result.strategic_recommendations],
             "ceo_summary": result.ceo_summary,

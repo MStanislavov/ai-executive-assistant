@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -70,3 +71,6 @@ class SafeDuckDuckGoSearchTool(BaseTool):
         except Exception as exc:
             logger.warning("DuckDuckGo search error: %s", exc)
             return f"Search error: {exc}"
+
+    async def _arun(self, query: str) -> str:
+        return await asyncio.to_thread(self._run, query)

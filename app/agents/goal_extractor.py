@@ -13,7 +13,7 @@ from app.agents.schemas import GoalExtractorOutput
 class GoalExtractorAgent(LLMAgent):
     agent_name = "goal_extractor"
 
-    def __call__(self, state: dict[str, Any]) -> dict[str, Any]:
+    async def __call__(self, state: dict[str, Any]) -> dict[str, Any]:
         targets = state.get("profile_targets", [])
         skills = state.get("profile_skills", [])
         constraints = state.get("profile_constraints", [])
@@ -47,7 +47,7 @@ class GoalExtractorAgent(LLMAgent):
             user_parts.append(f"CV summary:\n{cv_summary[:3000]}")
 
         user_content = "\n".join(user_parts)
-        result = self._invoke_structured(GoalExtractorOutput, system_prompt, user_content)
+        result = await self._invoke_structured(GoalExtractorOutput, system_prompt, user_content)
         return {
             "search_prompts": {
                 "cert_prompt": result.cert_prompt,

@@ -13,13 +13,13 @@ class DiffEngine:
     def __init__(self, audit_writer: AuditWriter) -> None:
         self._audit_writer = audit_writer
 
-    def diff_runs(self, run_id_a: str, run_id_b: str) -> dict[str, Any]:
+    async def diff_runs(self, run_id_a: str, run_id_b: str) -> dict[str, Any]:
         """Compare two runs and return a structured diff.
 
         Returns a dictionary with additions, removals, changes, and a summary.
         """
-        bundle_a = self._audit_writer.read_bundle(run_id_a)
-        bundle_b = self._audit_writer.read_bundle(run_id_b)
+        bundle_a = await self._audit_writer.read_bundle(run_id_a)
+        bundle_b = await self._audit_writer.read_bundle(run_id_b)
 
         if bundle_a is None:
             raise ValueError(f"No bundle found for run {run_id_a}")

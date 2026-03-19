@@ -31,7 +31,7 @@ class WebScraperAgent(LLMAgent):
         super().__init__(llm=llm, prompt_loader=prompt_loader)
         self._search_tool = search_tool
 
-    def __call__(self, state: dict[str, Any]) -> dict[str, Any]:
+    async def __call__(self, state: dict[str, Any]) -> dict[str, Any]:
         prompt = state.get("search_prompt", "")
         category = state.get("search_category", "")
         result_key = f"raw_{category}_results"
@@ -52,13 +52,13 @@ class WebScraperAgent(LLMAgent):
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_content},
                 ]
-                response = llm_with_tools.invoke(messages)
+                response = await llm_with_tools.ainvoke(messages)
                 messages.append(response)
 
                 # Process tool calls until the LLM returns a final response
                 while response.tool_calls:
                     for tool_call in response.tool_calls:
-                        tool_result = self._search_tool.invoke(
+                        tool_result = await self._search_tool.ainvoke(
                             tool_call["args"]
                         )
                         messages.append({
@@ -66,7 +66,7 @@ class WebScraperAgent(LLMAgent):
                             "content": str(tool_result),
                             "tool_call_id": tool_call["id"],
                         })
-                    response = llm_with_tools.invoke(messages)
+                    response = await llm_with_tools.ainvoke(messages)
                     messages.append(response)
 
                 search_context = response.content or ""
@@ -78,7 +78,7 @@ class WebScraperAgent(LLMAgent):
                 if search_context
                 else user_content
             )
-            result = self._invoke_structured(
+            result = await self._invoke_structured(
                 WebScraperOutput, system_prompt, structured_input
             )
             results = [r.model_dump() for r in result.results]

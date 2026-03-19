@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from dataclasses import asdict, dataclass
@@ -59,8 +60,8 @@ class AuditWriter:
     # JSONL append
     # ------------------------------------------------------------------
 
-    def append(self, run_id: str, event: AuditEvent) -> None:
-        """Append a single event (with PII redaction) to the run's JSONL log."""
+    def _append_sync(self, run_id: str, event: AuditEvent) -> None:
+        """Sync implementation of append."""
         run_dir = self._run_dir(run_id)
         run_dir.mkdir(parents=True, exist_ok=True)
         log_path = self._log_path(run_id)
@@ -69,12 +70,16 @@ class AuditWriter:
         with open(log_path, "a", encoding="utf-8") as f:
             f.write(redacted_line + "\n")
 
+    async def append(self, run_id: str, event: AuditEvent) -> None:
+        """Append a single event (with PII redaction) to the run's JSONL log."""
+        await asyncio.to_thread(self._append_sync, run_id, event)
+
     # ------------------------------------------------------------------
     # Read helpers
     # ------------------------------------------------------------------
 
-    def read_log(self, run_id: str) -> list[dict[str, Any]]:
-        """Return all events from the run's JSONL log, in order."""
+    def _read_log_sync(self, run_id: str) -> list[dict[str, Any]]:
+        """Sync implementation of read_log."""
         log_path = self._log_path(run_id)
         if not log_path.exists():
             return []
@@ -86,11 +91,15 @@ class AuditWriter:
                     events.append(json.loads(line))
         return events
 
+    async def read_log(self, run_id: str) -> list[dict[str, Any]]:
+        """Return all events from the run's JSONL log, in order."""
+        return await asyncio.to_thread(self._read_log_sync, run_id)
+
     # ------------------------------------------------------------------
     # Bundle creation
     # ------------------------------------------------------------------
 
-    def create_run_bundle(
+    def _create_run_bundle_sync(
         self,
         run_id: str,
         profile_hash: str,
@@ -99,7 +108,7 @@ class AuditWriter:
         final_artifacts: dict[str, Any],
         intermediate_outputs: list[dict[str, Any]] | None = None,
     ) -> Path:
-        """Write the full run bundle to ``bundle.json`` with PII redaction."""
+        """Sync implementation of create_run_bundle."""
         run_dir = self._run_dir(run_id)
         run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -122,13 +131,33 @@ class AuditWriter:
 
         return bundle_path
 
-    def read_bundle(self, run_id: str) -> dict[str, Any] | None:
-        """Read and return the bundle, or *None* if it does not exist."""
+    async def create_run_bundle(
+        self,
+        run_id: str,
+        profile_hash: str,
+        policy_version_hash: str,
+        verifier_report: dict[str, Any],
+        final_artifacts: dict[str, Any],
+        intermediate_outputs: list[dict[str, Any]] | None = None,
+    ) -> Path:
+        """Write the full run bundle to ``bundle.json`` with PII redaction."""
+        return await asyncio.to_thread(
+            self._create_run_bundle_sync,
+            run_id, profile_hash, policy_version_hash,
+            verifier_report, final_artifacts, intermediate_outputs,
+        )
+
+    def _read_bundle_sync(self, run_id: str) -> dict[str, Any] | None:
+        """Sync implementation of read_bundle."""
         bundle_path = self._run_dir(run_id) / "bundle.json"
         if not bundle_path.exists():
             return None
         with open(bundle_path, "r", encoding="utf-8") as f:
             return json.load(f)
+
+    async def read_bundle(self, run_id: str) -> dict[str, Any] | None:
+        """Read and return the bundle, or *None* if it does not exist."""
+        return await asyncio.to_thread(self._read_bundle_sync, run_id)
 
     # ------------------------------------------------------------------
     # Utilities

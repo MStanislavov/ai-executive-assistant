@@ -13,13 +13,13 @@ class ReplayEngine:
     def __init__(self, audit_writer: AuditWriter) -> None:
         self._audit_writer = audit_writer
 
-    def replay_strict(self, original_run_id: str, new_run_id: str) -> dict[str, Any]:
+    async def replay_strict(self, original_run_id: str, new_run_id: str) -> dict[str, Any]:
         """Replay using stored tool responses (no network calls).
 
         In strict mode the stored artifacts are returned verbatim as the
         result of the replay run.  No drift is possible by definition.
         """
-        bundle = self._audit_writer.read_bundle(original_run_id)
+        bundle = await self._audit_writer.read_bundle(original_run_id)
         if bundle is None:
             raise ValueError(f"No bundle found for run {original_run_id}")
 
@@ -32,7 +32,7 @@ class ReplayEngine:
             "drift": [],  # No drift in strict mode (by definition)
         }
 
-    def replay_refresh(
+    async def replay_refresh(
         self,
         original_run_id: str,
         new_run_id: str,
@@ -44,7 +44,7 @@ class ReplayEngine:
         fresh ``new_result`` dictionary.  This method loads the original
         bundle and compares the two.
         """
-        bundle = self._audit_writer.read_bundle(original_run_id)
+        bundle = await self._audit_writer.read_bundle(original_run_id)
         if bundle is None:
             raise ValueError(f"No bundle found for run {original_run_id}")
 

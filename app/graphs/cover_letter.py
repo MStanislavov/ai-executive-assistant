@@ -59,7 +59,7 @@ def _make_audit_node(
 ):
     """Return a graph node that writes audit events and creates the run bundle."""
 
-    def audit_node(state: CoverLetterState) -> dict[str, Any]:
+    async def audit_node(state: CoverLetterState) -> dict[str, Any]:
         if audit_writer is None:
             node_start(_P, state, "audit_writer", skipped=True)
             return {}
@@ -70,7 +70,7 @@ def _make_audit_node(
         run_id = state.get("run_id", "unknown")
         policy_hash = policy_engine.version.hash if policy_engine else ""
 
-        audit_writer.append(
+        await audit_writer.append(
             run_id,
             AuditEvent(
                 timestamp=datetime.now(timezone.utc).isoformat(),
@@ -82,7 +82,7 @@ def _make_audit_node(
             ),
         )
 
-        audit_writer.create_run_bundle(
+        await audit_writer.create_run_bundle(
             run_id=run_id,
             profile_hash=state.get("profile_id", "unknown"),
             policy_version_hash=policy_hash,

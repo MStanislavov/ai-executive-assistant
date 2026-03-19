@@ -12,7 +12,7 @@ from app.agents.schemas import DataFormatterOutput
 class DataFormatterAgent(LLMAgent):
     agent_name = "data_formatter"
 
-    def __call__(self, state: dict[str, Any]) -> dict[str, Any]:
+    async def __call__(self, state: dict[str, Any]) -> dict[str, Any]:
         raw_jobs = state.get("raw_job_results", [])
         raw_certs = state.get("raw_cert_results", [])
         raw_events = state.get("raw_event_results", [])
@@ -30,7 +30,7 @@ class DataFormatterAgent(LLMAgent):
             f"Raw group results:\n{json.dumps(raw_groups, indent=2)}\n\n"
             f"Raw trend results:\n{json.dumps(raw_trends, indent=2)}"
         )
-        result = self._invoke_structured(DataFormatterOutput, system_prompt, user_content)
+        result = await self._invoke_structured(DataFormatterOutput, system_prompt, user_content)
         return {
             "formatted_jobs": [j.model_dump() for j in result.jobs],
             "formatted_certifications": [c.model_dump() for c in result.certifications],
