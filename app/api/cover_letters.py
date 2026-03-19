@@ -59,3 +59,19 @@ async def get_cover_letter(
     if result is None:
         raise HTTPException(status_code=404, detail="Cover letter not found")
     return result
+
+
+@router.delete(
+    "/profiles/{profile_id}/cover-letters/{letter_id}",
+    status_code=204,
+    responses={404: {"description": "Cover letter not found"}},
+)
+async def delete_cover_letter(
+    profile_id: str,
+    letter_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    """Delete a cover letter."""
+    deleted = await cover_letter_service.delete_cover_letter(db, profile_id, letter_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Cover letter not found")

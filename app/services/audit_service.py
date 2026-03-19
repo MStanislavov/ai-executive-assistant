@@ -32,7 +32,7 @@ async def get_audit_trail(
     """Return the full audit event log for a run."""
     await _get_run_or_raise(db, run_id, profile_id)
     writer = AuditWriter(artifacts_dir=settings.artifacts_dir)
-    events = writer.read_log(run_id)
+    events = await writer.read_log(run_id)
     return {"run_id": run_id, "events": events}
 
 
@@ -45,7 +45,7 @@ async def get_verifier_report(
     """
     await _get_run_or_raise(db, run_id, profile_id)
     writer = AuditWriter(artifacts_dir=settings.artifacts_dir)
-    bundle = writer.read_bundle(run_id)
+    bundle = await writer.read_bundle(run_id)
     if bundle is None:
         raise LookupError("No audit bundle found for this run")
     return bundle.get("verifier_report", {})
@@ -65,23 +65,23 @@ async def replay_run(
     new_run_id = str(uuid.uuid4())
 
     if mode == "strict":
-        result = replay_engine.replay_strict(
+        result = await replay_engine.replay_strict(
             original_run_id=run_id,
             new_run_id=new_run_id,
         )
     else:
-        bundle = writer.read_bundle(run_id)
+        bundle = await writer.read_bundle(run_id)
         if bundle is None:
             raise LookupError("No audit bundle found for this run")
         new_result = bundle.get("final_artifacts", {})
-        result = replay_engine.replay_refresh(
+        result = await replay_engine.replay_refresh(
             original_run_id=run_id,
             new_run_id=new_run_id,
             new_result=new_result,
         )
 
     # Persist the replay bundle
-    writer.create_run_bundle(
+    await writer.create_run_bundle(
         run_id=new_run_id,
         profile_hash=profile_id,
         policy_version_hash="",
@@ -90,6 +90,27 @@ async def replay_run(
     )
 
     return result
+
+
+async def get_executive_insights(
+    db: AsyncSession, profile_id: str, run_id: str
+) -> dict:
+    """Return CEO/CFO insights from a weekly run's audit bundle.
+
+    Raises LookupError if run or bundle not found.
+    """
+    await _get_run_or_raise(db, run_id, profile_id)
+    writer = AuditWriter(artifacts_dir=settings.artifacts_dir)
+    bundle = await writer.read_bundle(run_id)
+    if bundle is None:
+        raise LookupError("No audit bundle found for this run")
+    artifacts = bundle.get("final_artifacts", {})
+    return {
+        "strategic_recommendations": artifacts.get("strategic_recommendations", []),
+        "ceo_summary": artifacts.get("ceo_summary", ""),
+        "risk_assessments": artifacts.get("risk_assessments", []),
+        "cfo_summary": artifacts.get("cfo_summary", ""),
+    }
 
 
 async def diff_runs(
@@ -103,4 +124,4 @@ async def diff_runs(
     await _get_run_or_raise(db, other_run_id, profile_id)
     writer = AuditWriter(artifacts_dir=settings.artifacts_dir)
     diff_engine = DiffEngine(audit_writer=writer)
-    return diff_engine.diff_runs(run_id, other_run_id)
+    return await diff_engine.diff_runs(run_id, other_run_id)

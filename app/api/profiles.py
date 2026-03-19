@@ -72,6 +72,28 @@ async def delete_profile(
         raise HTTPException(status_code=404, detail=profile_not_found)
 
 
+@router.get(
+    "/profiles/{profile_id}/export",
+    responses={404: {"description": profile_not_found}},
+)
+async def export_profile(
+    profile_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    result = await profile_service.export_profile(db, profile_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=profile_not_found)
+    return result
+
+
+@router.post("/profiles/import", status_code=201)
+async def import_profile(
+    body: dict,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ProfileRead:
+    return await profile_service.import_profile(db, body)
+
+
 @router.post(
     "/profiles/{profile_id}/cv",
     responses={404: {"description": profile_not_found}},

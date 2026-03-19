@@ -79,6 +79,27 @@ async def get_verifier_report(
 
 
 # ------------------------------------------------------------------
+# Executive insights (CEO / CFO) endpoint
+# ------------------------------------------------------------------
+
+
+@router.get(
+    "/profiles/{profile_id}/runs/{run_id}/insights",
+    responses={404: {"description": "Run or audit bundle not found"}},
+)
+async def get_executive_insights(
+    profile_id: str,
+    run_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Return strategic recommendations (CEO) and risk assessments (CFO) for a run."""
+    try:
+        return await audit_service.get_executive_insights(db, profile_id, run_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+# ------------------------------------------------------------------
 # Replay endpoint
 # ------------------------------------------------------------------
 

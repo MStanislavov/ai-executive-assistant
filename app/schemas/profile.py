@@ -26,3 +26,10 @@ class ProfileRead(BaseModel):
     cv_path: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class ProfileExport(BaseModel):
+    name: str
+    targets: list[str] | None = None
+    constraints: list[str] | None = None
+    skills: list[str] | None = None

@@ -101,3 +101,25 @@ async def cancel_run(
         raise HTTPException(status_code=404, detail="Run not found")
     except ValueError:
         raise HTTPException(status_code=409, detail="Run is not currently executing")
+
+
+@router.delete(
+    "/profiles/{profile_id}/runs/{run_id}",
+    responses={
+        404: {"description": "Run not found"},
+        409: {"description": "Run is still executing"},
+    },
+)
+async def delete_run(
+    profile_id: str,
+    run_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, str]:
+    """Delete a run and all associated results."""
+    try:
+        await run_service.delete_run(db, profile_id, run_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Run not found")
+    except ValueError:
+        raise HTTPException(status_code=409, detail="Cannot delete a run that is still executing")
+    return {"detail": "Deleted"}

@@ -15,3 +15,6 @@ class CoverLetterRead(BaseModel):
     run_id: str | None = None
     content: str
     created_at: datetime
+    job_title: str | None = None
+    job_company: str | None = None
+    job_url: str | None = None

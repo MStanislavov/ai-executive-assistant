@@ -1,10 +1,11 @@
 """Result query business logic for all 6 entity types."""
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.certification import Certification
 from app.models.course import Course
+from app.models.cover_letter import CoverLetter
 from app.models.event import Event
 from app.models.group import Group
 from app.models.job_opportunity import JobOpportunity
@@ -181,5 +182,34 @@ async def delete_result(
     if item is None:
         return False
     await db.delete(item)
+    await db.commit()
+    return True
+
+
+async def count_cover_letters_for_job(
+    db: AsyncSession, profile_id: str, job_id: str
+) -> int:
+    result = await db.execute(
+        select(func.count()).where(
+            CoverLetter.job_opportunity_id == job_id,
+            CoverLetter.profile_id == profile_id,
+        )
+    )
+    return result.scalar_one()
+
+
+async def delete_job_cascade(
+    db: AsyncSession, profile_id: str, job_id: str
+) -> bool:
+    job = await _get_by_id(db, JobOpportunity, profile_id, job_id)
+    if job is None:
+        return False
+    await db.execute(
+        delete(CoverLetter).where(
+            CoverLetter.job_opportunity_id == job_id,
+            CoverLetter.profile_id == profile_id,
+        )
+    )
+    await db.delete(job)
     await db.commit()
     return True

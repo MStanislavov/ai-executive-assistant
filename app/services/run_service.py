@@ -5,13 +5,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import shutil
 import time
 from datetime import datetime, timezone
 from typing import Any
 
 from app.llm.search_tool import SafeDuckDuckGoSearchTool
 from langchain_openai import ChatOpenAI
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.factory import AgentFactory, AgentModelConfig
@@ -25,6 +26,7 @@ from app.graphs.weekly import build_weekly_graph
 from app.llm.prompt_loader import PromptLoader
 from app.models.certification import Certification
 from app.models.course import Course
+from app.models.cover_letter import CoverLetter
 from app.models.event import Event
 from app.models.group import Group
 from app.models.job_opportunity import JobOpportunity
@@ -308,7 +310,7 @@ async def execute_run(run_id: str, profile_id: str, mode: str) -> None:
         audit_writer = AuditWriter(
             artifacts_dir=settings.artifacts_dir, policy_engine=policy_engine
         )
-        audit_writer.append(
+        await audit_writer.append(
             run_id,
             AuditEvent(
                 timestamp=datetime.now(timezone.utc).isoformat(),
@@ -476,3 +478,53 @@ async def cancel_run(
 
     task.cancel()
     return {"detail": "Cancellation requested", "run_id": run_id}
+
+
+async def delete_run(db: AsyncSession, profile_id: str, run_id: str) -> bool:
+    """Delete a run and all its associated results.
+
+    Deletes cover letters from this run, unlinks cover letters from other runs
+    that reference jobs produced by this run, then deletes all result rows and
+    the run itself.
+
+    Raises LookupError if the run is not found.
+    Raises ValueError if the run is still executing.
+    """
+    run = await db.get(Run, run_id)
+    if run is None or run.profile_id != profile_id:
+        raise LookupError("Run not found")
+
+    task = _running_tasks.get(run_id)
+    if task is not None and not task.done():
+        raise ValueError("Cannot delete a run that is still executing")
+
+    # 1) Delete cover letters that belong to this run
+    await db.execute(
+        delete(CoverLetter).where(CoverLetter.run_id == run_id)
+    )
+
+    # 2) Unlink cover letters from other runs that reference jobs from this run
+    await db.execute(
+        update(CoverLetter)
+        .where(CoverLetter.job_opportunity_id.in_(
+            select(JobOpportunity.id).where(JobOpportunity.run_id == run_id)
+        ))
+        .values(job_opportunity_id=None)
+    )
+
+    # 3) Delete all result types for this run
+    for model in (JobOpportunity, Certification, Course, Event, Group, Trend):
+        await db.execute(delete(model).where(model.run_id == run_id))
+
+    # 4) Delete the run
+    await db.delete(run)
+    await db.commit()
+
+    # 5) Clean up audit artifacts from disk (in thread to avoid blocking)
+    def _cleanup() -> None:
+        run_dir = settings.artifacts_dir / "runs" / run_id
+        if run_dir.exists():
+            shutil.rmtree(run_dir, ignore_errors=True)
+
+    await asyncio.to_thread(_cleanup)
+    return True

@@ -186,9 +186,21 @@ async def delete_job(
     profile_id: str,
     item_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
+    force: bool = False,
 ) -> dict[str, str]:
-    if not await result_service.delete_result(db, JobOpportunity, profile_id, item_id):
-        raise HTTPException(status_code=404, detail="Item not found")
+    if not force:
+        count = await result_service.count_cover_letters_for_job(db, profile_id, item_id)
+        if count > 0:
+            raise HTTPException(
+                status_code=409,
+                detail=f"This job has {count} cover letter(s). Delete them too?",
+            )
+    if force:
+        if not await result_service.delete_job_cascade(db, profile_id, item_id):
+            raise HTTPException(status_code=404, detail="Item not found")
+    else:
+        if not await result_service.delete_result(db, JobOpportunity, profile_id, item_id):
+            raise HTTPException(status_code=404, detail="Item not found")
     return {"detail": "Deleted"}
 
 

@@ -120,33 +120,28 @@ async def delete_profile(db: AsyncSession, profile_id: str) -> bool:
     )
     run_ids = [r for (r,) in run_rows.all()]
 
-    # Delete children of runs (order matters for FK constraints)
-    if run_ids:
-        await db.execute(delete(JobOpportunity).where(JobOpportunity.run_id.in_(run_ids)))
-        await db.execute(delete(Certification).where(Certification.run_id.in_(run_ids)))
-        await db.execute(delete(Course).where(Course.run_id.in_(run_ids)))
-        await db.execute(delete(Event).where(Event.run_id.in_(run_ids)))
-        await db.execute(delete(Group).where(Group.run_id.in_(run_ids)))
-        await db.execute(delete(Trend).where(Trend.run_id.in_(run_ids)))
-
-    # Delete profile-scoped records
+    # Delete in FK-safe order: cover letters first (FK -> job_opportunities),
+    # then result tables (FK -> runs), then runs (FK -> user_profiles)
     await db.execute(delete(CoverLetter).where(CoverLetter.profile_id == profile_id))
     if run_ids:
+        for model in (JobOpportunity, Certification, Course, Event, Group, Trend):
+            await db.execute(delete(model).where(model.run_id.in_(run_ids)))
         await db.execute(delete(Run).where(Run.profile_id == profile_id))
 
     await db.delete(profile)
     await db.commit()
 
-    # Clean up filesystem artifacts
-    cv_dir = settings.artifacts_dir / "cvs" / profile_id
-    if cv_dir.exists():
-        shutil.rmtree(cv_dir)
+    # Clean up filesystem artifacts (run in thread to avoid blocking event loop)
+    def _cleanup() -> None:
+        cv_dir = settings.artifacts_dir / "cvs" / profile_id
+        if cv_dir.exists():
+            shutil.rmtree(cv_dir, ignore_errors=True)
+        for rid in run_ids:
+            run_dir = settings.artifacts_dir / "runs" / rid
+            if run_dir.exists():
+                shutil.rmtree(run_dir, ignore_errors=True)
 
-    for run_id in run_ids:
-        run_dir = settings.artifacts_dir / "runs" / run_id
-        if run_dir.exists():
-            shutil.rmtree(run_dir)
-
+    await asyncio.to_thread(_cleanup)
     return True
 
 
@@ -181,7 +176,32 @@ def extract_text_from_pdf(file_path: str) -> str:
     return "\n".join(text_parts)
 
 
-def extract_skills_with_ai(cv_text: str) -> list[str]:
+async def export_profile(db: AsyncSession, profile_id: str) -> dict | None:
+    """Export profile data as a dict. Returns None if not found."""
+    profile = await db.get(UserProfile, profile_id)
+    if profile is None:
+        return None
+    return {
+        "name": profile.name,
+        "targets": _deserialize_list(profile.targets),
+        "constraints": _deserialize_list(profile.constraints),
+        "skills": _deserialize_list(profile.skills),
+    }
+
+
+async def import_profile(db: AsyncSession, data: dict) -> ProfileRead:
+    """Import a profile from exported data. Creates a new profile."""
+    from app.schemas.profile import ProfileCreate
+    body = ProfileCreate(
+        name=data.get("name", "Imported Profile"),
+        targets=data.get("targets"),
+        constraints=data.get("constraints"),
+        skills=data.get("skills"),
+    )
+    return await create_profile(db, body)
+
+
+async def extract_skills_with_ai(cv_text: str) -> list[str]:
     """Use ChatOpenAI to extract skills from CV text."""
     llm = ChatOpenAI(
         model=settings.llm_model,
@@ -202,7 +222,7 @@ def extract_skills_with_ai(cv_text: str) -> list[str]:
         },
         {"role": "user", "content": cv_text[:8000]},
     ]
-    result = structured_llm.invoke(messages)
+    result = await structured_llm.ainvoke(messages)
     return result.skills
 
 
@@ -234,5 +254,5 @@ async def extract_skills_from_cv(
             "LLM API key not configured. Set API_KEY in .env to enable skill extraction."
         )
 
-    skills = extract_skills_with_ai(cv_text)
+    skills = await extract_skills_with_ai(cv_text)
     return ExtractedSkills(skills=skills)

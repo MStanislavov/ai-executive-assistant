@@ -19,13 +19,21 @@ from app.models.job_opportunity import JobOpportunity
 from app.models.profile import UserProfile
 from app.models.run import Run
 from app.schemas.cover_letter import CoverLetterCreate, CoverLetterRead
+from app.services.run_service import (
+    _parse_profile_constraints,
+    _parse_profile_skills,
+    _parse_profile_targets,
+    get_agent_factory,
+)
 from app.sse import event_manager
 
 # Prevent background tasks from being garbage-collected
 _background_tasks: set[asyncio.Task] = set()
 
 
-def cl_to_read(cl: CoverLetter) -> CoverLetterRead:
+def cl_to_read(
+    cl: CoverLetter, job: JobOpportunity | None = None
+) -> CoverLetterRead:
     return CoverLetterRead(
         id=cl.id,
         profile_id=cl.profile_id,
@@ -33,6 +41,9 @@ def cl_to_read(cl: CoverLetter) -> CoverLetterRead:
         run_id=cl.run_id,
         content=cl.content,
         created_at=cl.created_at,
+        job_title=job.title if job else None,
+        job_company=job.company if job else None,
+        job_url=job.url if job else None,
     )
 
 
@@ -41,14 +52,15 @@ async def resolve_job_opportunity(
     job_opportunity_id: str | None,
     profile_id: str,
     jd_text: str,
-) -> tuple[dict, str]:
+) -> tuple[dict, str, JobOpportunity | None]:
     """Resolve job opportunity details and JD text from a job opportunity ID.
 
+    Returns (job_dict, jd_text, job_orm_or_None).
     Raises LookupError if job_opportunity_id is given but not found.
     """
     job_opportunity: dict = {}
     if not job_opportunity_id:
-        return job_opportunity, jd_text
+        return job_opportunity, jd_text, None
     job = await db.get(JobOpportunity, job_opportunity_id)
     if job is None or job.profile_id != profile_id:
         raise LookupError("Job opportunity not found")
@@ -60,31 +72,59 @@ async def resolve_job_opportunity(
     }
     if not jd_text:
         jd_text = job.description or job.title
-    return job_opportunity, jd_text
+    return job_opportunity, jd_text, job
 
 
-async def read_cv_content(profile: UserProfile) -> str:
-    """Read CV content from file path or fall back to skills."""
-    if profile.cv_path:
+async def read_cv_content(cv_path: str | None, skills_fallback: str = "") -> str:
+    """Read CV content from a file path or fall back to skills."""
+    if cv_path:
         try:
-            return await asyncio.to_thread(
-                Path(profile.cv_path).read_text, "utf-8"
-            )
+            path = Path(cv_path)
+            if path.suffix.lower() == ".pdf":
+                from app.services.profile_service import extract_text_from_pdf
+
+                return await asyncio.to_thread(extract_text_from_pdf, cv_path)
+            return await asyncio.to_thread(path.read_text, "utf-8")
         except (OSError, UnicodeDecodeError):
             pass
-    return profile.skills or ""
+    return skills_fallback
+
+
+async def summarize_cv(raw_cv_content: str) -> str:
+    """Summarize CV content using LLM if available, otherwise return raw."""
+    if not raw_cv_content:
+        return raw_cv_content
+    factory = get_agent_factory()
+    if not factory.is_live:
+        return raw_cv_content
+    from app.llm.prompt_loader import PromptLoader
+
+    prompt_loader = PromptLoader(settings.prompts_dir)
+    system_prompt = prompt_loader.load("cv_summarizer")
+    llm = factory._llm
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": raw_cv_content},
+    ]
+    response = await llm.ainvoke(messages)
+    return response.content
 
 
 async def generate_cover_letter(
     run_id: str,
     profile_id: str,
     cover_letter_id: str,
-    cv_content: str,
+    cv_path: str | None,
+    skills_fallback: str,
     jd_text: str,
     job_opportunity: dict,
     job_opportunity_id: str | None,
+    profile_name: str = "",
+    profile_targets: list[str] | None = None,
+    profile_skills: list[str] | None = None,
+    profile_constraints: list[str] | None = None,
 ) -> None:
-    """Background task: run the cover letter LangGraph pipeline and persist result."""
+    """Background task: run the cover letter LangGraph pipeline and persist a result."""
     try:
         async with async_session_factory() as session:
             run = await session.get(Run, run_id)
@@ -99,12 +139,24 @@ async def generate_cover_letter(
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
+        # Read and summarize CV inside the background task (non-blocking)
+        raw_cv_content = await read_cv_content(cv_path, skills_fallback)
+
+        # Extract candidate name from raw CV before summarization loses it
+        from app.agents.cover_letter_agent import _extract_name_from_cv
+
+        candidate_name = _extract_name_from_cv(raw_cv_content)
+        if candidate_name:
+            profile_name = candidate_name
+
+        cv_content = await summarize_cv(raw_cv_content)
+
         policy_engine = PolicyEngine(settings.policy_dir)
         audit_writer = AuditWriter(
             artifacts_dir=settings.artifacts_dir, policy_engine=policy_engine
         )
 
-        audit_writer.append(
+        await audit_writer.append(
             run_id,
             AuditEvent(
                 timestamp=datetime.now(timezone.utc).isoformat(),
@@ -115,12 +167,18 @@ async def generate_cover_letter(
         )
 
         graph = build_cover_letter_graph(
-            policy_engine=policy_engine, audit_writer=audit_writer
+            policy_engine=policy_engine,
+            audit_writer=audit_writer,
+            agent_factory=get_agent_factory(),
         )
         compiled = graph.compile()
 
         initial_state = {
             "profile_id": profile_id,
+            "profile_name": profile_name,
+            "profile_targets": profile_targets or [],
+            "profile_skills": profile_skills or [],
+            "profile_constraints": profile_constraints or [],
             "cv_content": cv_content,
             "jd_text": jd_text,
             "job_opportunity": job_opportunity,
@@ -129,7 +187,7 @@ async def generate_cover_letter(
             "audit_events": [],
         }
 
-        result = await asyncio.to_thread(compiled.invoke, initial_state)
+        result = await compiled.ainvoke(initial_state)
         content = result.get("cover_letter_content", "")
 
         async with async_session_factory() as session:
@@ -151,7 +209,8 @@ async def generate_cover_letter(
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
-    except Exception:
+    except Exception as e:
+        print(e)
         async with async_session_factory() as session:
             run = await session.get(Run, run_id)
             if run:
@@ -174,27 +233,33 @@ async def create_cover_letter(
 ) -> CoverLetterRead:
     """Create a cover letter and launch background generation.
 
-    Raises LookupError if profile/job not found, ValueError if missing input.
+    Raises LookupError if profile/ job is not found, ValueError if missing input.
     """
     profile = await db.get(UserProfile, profile_id)
     if profile is None:
         raise LookupError("Profile not found")
 
+    if not profile.cv_path:
+        raise ValueError("Profile is incomplete: please upload a CV before generating a cover letter")
+
     if not body.job_opportunity_id and not body.jd_text:
         raise ValueError("Either job_opportunity_id or jd_text must be provided")
 
     jd_text = body.jd_text or ""
-    job_opportunity, jd_text = await resolve_job_opportunity(
+    job_opportunity, jd_text, job_orm = await resolve_job_opportunity(
         db, body.job_opportunity_id, profile_id, jd_text
     )
-    cv_content = await read_cv_content(profile)
 
-    # Create run record
+    targets = _parse_profile_targets(profile)
+    skills = _parse_profile_skills(profile)
+    constraints = _parse_profile_constraints(profile)
+
+    # Create a run record
     run = Run(profile_id=profile_id, mode="cover_letter", status="pending")
     db.add(run)
     await db.flush()
 
-    # Create cover letter record (content filled after pipeline runs)
+    # Create a cover letter record (content filled after the pipeline runs)
     cl = CoverLetter(
         profile_id=profile_id,
         job_opportunity_id=body.job_opportunity_id,
@@ -206,41 +271,71 @@ async def create_cover_letter(
     await db.refresh(cl)
     await db.refresh(run)
 
-    # Launch pipeline in background
+    # Launch pipeline in background (CV reading + summarization happen there)
     task = asyncio.create_task(
         generate_cover_letter(
             run_id=run.id,
             profile_id=profile_id,
             cover_letter_id=cl.id,
-            cv_content=cv_content,
+            cv_path=profile.cv_path,
+            skills_fallback=profile.skills or "",
             jd_text=jd_text,
             job_opportunity=job_opportunity,
             job_opportunity_id=body.job_opportunity_id,
+            profile_name=profile.name,
+            profile_targets=targets,
+            profile_skills=skills,
+            profile_constraints=constraints,
         )
     )
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
 
-    return cl_to_read(cl)
+    return cl_to_read(cl, job_orm)
 
 
 async def list_cover_letters(
     db: AsyncSession, profile_id: str
 ) -> list[CoverLetterRead]:
-    """List all cover letters for a profile."""
+    """List all cover letters for a profile, with job details."""
     result = await db.execute(
-        select(CoverLetter)
+        select(CoverLetter, JobOpportunity)
+        .outerjoin(
+            JobOpportunity,
+            CoverLetter.job_opportunity_id == JobOpportunity.id,
+        )
         .where(CoverLetter.profile_id == profile_id)
         .order_by(CoverLetter.created_at.desc())
     )
-    return [cl_to_read(cl) for cl in result.scalars().all()]
+    return [cl_to_read(cl, job) for cl, job in result.all()]
 
 
 async def get_cover_letter(
     db: AsyncSession, profile_id: str, letter_id: str
 ) -> CoverLetterRead | None:
     """Return CoverLetterRead or None if not found."""
+    result = await db.execute(
+        select(CoverLetter, JobOpportunity)
+        .outerjoin(
+            JobOpportunity,
+            CoverLetter.job_opportunity_id == JobOpportunity.id,
+        )
+        .where(CoverLetter.id == letter_id, CoverLetter.profile_id == profile_id)
+    )
+    row = result.one_or_none()
+    if row is None:
+        return None
+    cl, job = row
+    return cl_to_read(cl, job)
+
+
+async def delete_cover_letter(
+    db: AsyncSession, profile_id: str, letter_id: str
+) -> bool:
+    """Delete a cover letter. Returns True if deleted, False if not found."""
     cl = await db.get(CoverLetter, letter_id)
     if cl is None or cl.profile_id != profile_id:
-        return None
-    return cl_to_read(cl)
+        return False
+    await db.delete(cl)
+    await db.commit()
+    return True

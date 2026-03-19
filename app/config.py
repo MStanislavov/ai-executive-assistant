@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     # Server
     app_host: str = "0.0.0.0"
     app_port: int = 8000
-    app_reload: bool = True
+    app_reload: bool = False
 
     # Paths (resolved relative to project root)
     policy_dir: Path = _PROJECT_ROOT / "policy"
