@@ -9,28 +9,72 @@ class DailyState(TypedDict, total=False):
     # Input
     profile_id: str
     profile_targets: list[str]
-    source_config: dict[str, Any]
+    profile_skills: list[str]
+    profile_constraints: list[str]
+    cv_summary: str
+    run_id: str
 
-    # Raw retrievals
-    raw_job_listings: list[dict[str, Any]]
-    raw_cert_listings: list[dict[str, Any]]
-    raw_trends_data: list[dict[str, Any]]
+    # GoalExtractor output
+    search_prompts: dict[str, str]
 
-    # Extracted
-    extracted_opportunities: list[dict[str, Any]]
-    evidence_items: list[dict[str, Any]]
+    # WebScraper raw results
+    raw_cert_results: list[dict[str, Any]]
+    raw_event_results: list[dict[str, Any]]
+    raw_group_results: list[dict[str, Any]]
+    raw_job_results: list[dict[str, Any]]
+    raw_trend_results: list[dict[str, Any]]
 
-    # Coordinator output
-    ranked_opportunities: list[dict[str, Any]]
-    claims: list[dict[str, Any]]
-    summary: str
-
-    # Verifier
-    verifier_report: dict[str, Any]
+    # DataFormatter output
+    formatted_jobs: list[dict[str, Any]]
+    formatted_certifications: list[dict[str, Any]]
+    formatted_courses: list[dict[str, Any]]
+    formatted_events: list[dict[str, Any]]
+    formatted_groups: list[dict[str, Any]]
+    formatted_trends: list[dict[str, Any]]
 
     # Audit
     audit_events: list[dict[str, Any]]
+
+    # Error tracking
+    errors: list[str]
+    safe_degradation: bool
+
+
+class WeeklyState(TypedDict, total=False):
+    # Input
+    profile_id: str
+    profile_targets: list[str]
+    profile_skills: list[str]
+    profile_constraints: list[str]
+    cv_summary: str
     run_id: str
+
+    # GoalExtractor output
+    search_prompts: dict[str, str]
+
+    # WebScraper raw results
+    raw_cert_results: list[dict[str, Any]]
+    raw_event_results: list[dict[str, Any]]
+    raw_group_results: list[dict[str, Any]]
+    raw_job_results: list[dict[str, Any]]
+    raw_trend_results: list[dict[str, Any]]
+
+    # DataFormatter output
+    formatted_jobs: list[dict[str, Any]]
+    formatted_certifications: list[dict[str, Any]]
+    formatted_courses: list[dict[str, Any]]
+    formatted_events: list[dict[str, Any]]
+    formatted_groups: list[dict[str, Any]]
+    formatted_trends: list[dict[str, Any]]
+
+    # CEO/CFO outputs
+    strategic_recommendations: list[dict[str, Any]]
+    ceo_summary: str
+    risk_assessments: list[dict[str, Any]]
+    cfo_summary: str
+
+    # Audit
+    audit_events: list[dict[str, Any]]
 
     # Error tracking
     errors: list[str]
@@ -41,57 +85,15 @@ class CoverLetterState(TypedDict, total=False):
     # Input
     profile_id: str
     cv_content: str
-    opportunity_id: str
     jd_text: str
-    opportunity: dict[str, Any]
+    job_opportunity: dict[str, Any]
+    run_id: str
 
     # Cover letter output
     cover_letter_content: str
-    claims: list[dict[str, Any]]
-    evidence_items: list[dict[str, Any]]
-
-    # Verifier
-    verifier_report: dict[str, Any]
 
     # Audit
     audit_events: list[dict[str, Any]]
-    run_id: str
 
     # Error tracking
     errors: list[str]
-
-
-class WeeklyState(TypedDict, total=False):
-    # Input
-    profile_id: str
-    profile_targets: list[str]
-    source_config: dict[str, Any]
-
-    # Raw retrievals (all 3 scout types)
-    raw_job_listings: list[dict[str, Any]]
-    raw_cert_listings: list[dict[str, Any]]
-    raw_trends_data: list[dict[str, Any]]
-
-    # Extracted
-    extracted_opportunities: list[dict[str, Any]]
-    evidence_items: list[dict[str, Any]]
-
-    # Coordinator output
-    ranked_opportunities: list[dict[str, Any]]
-    claims: list[dict[str, Any]]
-    summary: str
-
-    # CEO / CFO outputs
-    strategic_recommendations: list[dict[str, Any]]
-    risk_assessment: list[dict[str, Any]]
-
-    # Verifier
-    verifier_report: dict[str, Any]
-
-    # Audit
-    audit_events: list[dict[str, Any]]
-    run_id: str
-
-    # Error tracking
-    errors: list[str]
-    safe_degradation: bool

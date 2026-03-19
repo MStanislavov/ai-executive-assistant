@@ -1,37 +1,22 @@
 agents:
-  job_scout_retriever:
-    inputs: [profile_targets, source_config]
-    outputs: [raw_job_listings]
-  job_scout_extractor:
-    inputs: [raw_job_listings]
-    outputs: [extracted_opportunities, evidence_items]
-  cert_scout_retriever:
-    inputs: [profile_targets, source_config]
-    outputs: [raw_cert_listings]
-  cert_scout_extractor:
-    inputs: [raw_cert_listings]
-    outputs: [extracted_opportunities, evidence_items]
-  trends_scout_retriever:
-    inputs: [profile_targets, source_config]
-    outputs: [raw_trends_data]
-  trends_scout_extractor:
-    inputs: [raw_trends_data]
-    outputs: [extracted_opportunities, evidence_items]
-  coordinator:
-    inputs: [extracted_opportunities, evidence_items]
-    outputs: [ranked_opportunities, claims, summary]
+  goal_extractor:
+    inputs: [profile_targets, profile_skills]
+    outputs: [search_prompts]
+  web_scraper:
+    inputs: [search_prompt, search_category]
+    outputs: [raw_job_results, raw_cert_results, raw_event_results, raw_trend_results]
+  data_formatter:
+    inputs: [raw_job_results, raw_cert_results, raw_event_results, raw_trend_results]
+    outputs: [formatted_jobs, formatted_certifications, formatted_courses, formatted_events, formatted_groups, formatted_trends]
   ceo:
-    inputs: [ranked_opportunities, claims, summary]
-    outputs: [strategic_recommendations]
+    inputs: [formatted_jobs, formatted_certifications, formatted_courses, formatted_events, formatted_groups, formatted_trends, profile_targets]
+    outputs: [strategic_recommendations, ceo_summary]
   cfo:
-    inputs: [ranked_opportunities, claims, summary]
-    outputs: [risk_assessment]
+    inputs: [formatted_jobs, formatted_certifications, formatted_courses, formatted_events, formatted_groups, formatted_trends, profile_targets]
+    outputs: [risk_assessments, cfo_summary]
   cover_letter_agent:
-    inputs: [cv_text, jd_text, extracted_requirements]
-    outputs: [cover_letter_text, evidence_refs]
-  verifier:
-    inputs: [all_outputs, evidence_items, claims]
-    outputs: [verifier_report]
+    inputs: [cv_content, jd_text, job_opportunity]
+    outputs: [cover_letter_content]
   audit_writer:
-    inputs: [all_outputs, verifier_report, run_metadata]
+    inputs: [all_outputs, run_metadata]
     outputs: [audit_log, run_bundle]

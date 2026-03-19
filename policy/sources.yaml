@@ -1,25 +1,6 @@
 scouts:
-  job_scout:
+  web_scraper:
     allowed_sources:
-      - "linkedin.com/jobs"
-      - "indeed.com"
-      - "glassdoor.com"
-      - "stackoverflow.com/jobs"
-    denied_sources:
-      - "*.onion"
-  cert_scout:
-    allowed_sources:
-      - "coursera.org"
-      - "udemy.com"
-      - "aws.amazon.com/certification"
-      - "cloud.google.com/certification"
-      - "learn.microsoft.com"
-    denied_sources: []
-  trends_scout:
-    allowed_sources:
-      - "news.ycombinator.com"
-      - "techcrunch.com"
-      - "arxiv.org"
-      - "github.com/trending"
+      - "duckduckgo.com"
     denied_sources:
       - "*.onion"
