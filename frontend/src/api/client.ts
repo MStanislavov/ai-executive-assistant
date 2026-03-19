@@ -1,3 +1,5 @@
+import { toast } from "sonner"
+
 const BASE_URL = "/api"
 
 export class ApiError extends Error {
@@ -15,7 +17,9 @@ export class ApiError extends Error {
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const body = await response.json().catch(() => ({ detail: response.statusText }))
-    throw new ApiError(response.status, body.detail ?? response.statusText)
+    const detail = body.detail ?? response.statusText
+    toast.error(`${response.status}: ${detail}`)
+    throw new ApiError(response.status, detail)
   }
   if (response.status === 204) {
     return undefined as T

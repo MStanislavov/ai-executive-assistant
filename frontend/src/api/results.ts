@@ -1,5 +1,5 @@
 import { get, patch, del } from "./client"
-import type { JobOpportunity, Certification, Course, Event, Group, Trend, ResultTitleUpdate } from "./types"
+import type { JobOpportunity, Certification, Course, Event, Group, Trend, ResultTitleUpdate, ExecutiveInsights } from "./types"
 
 function withRunId(base: string, runId?: string) {
   return runId ? `${base}?run_id=${encodeURIComponent(runId)}` : base
@@ -29,10 +29,15 @@ export function listTrends(profileId: string, runId?: string) {
   return get<Trend[]>(withRunId(`/profiles/${profileId}/results/trends`, runId))
 }
 
+export function getInsights(profileId: string, runId: string) {
+  return get<ExecutiveInsights>(`/profiles/${profileId}/runs/${runId}/insights`)
+}
+
 export function updateResult(profileId: string, category: string, itemId: string, body: ResultTitleUpdate) {
   return patch<unknown>(`/profiles/${profileId}/results/${category}/${itemId}`, body)
 }
 
-export function deleteResult(profileId: string, category: string, itemId: string) {
-  return del(`/profiles/${profileId}/results/${category}/${itemId}`)
+export function deleteResult(profileId: string, category: string, itemId: string, force = false) {
+  const qs = force ? "?force=true" : ""
+  return del(`/profiles/${profileId}/results/${category}/${itemId}${qs}`)
 }

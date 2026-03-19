@@ -125,6 +125,26 @@ export interface ResultTitleUpdate {
   title: string
 }
 
+export interface StrategicRecommendation {
+  area: string
+  recommendation: string
+  priority: string
+}
+
+export interface RiskAssessment {
+  area: string
+  risk_level: string
+  time_investment: string
+  roi_estimate: string
+}
+
+export interface ExecutiveInsights {
+  strategic_recommendations: StrategicRecommendation[]
+  ceo_summary: string
+  risk_assessments: RiskAssessment[]
+  cfo_summary: string
+}
+
 export interface CoverLetterCreate {
   job_opportunity_id?: string | null
   jd_text?: string | null
@@ -137,6 +157,9 @@ export interface CoverLetter {
   run_id: string | null
   content: string
   created_at: string
+  job_title: string | null
+  job_company: string | null
+  job_url: string | null
 }
 
 export interface Policy {

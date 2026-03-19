@@ -1,4 +1,4 @@
-import { get, post } from "./client"
+import { get, post, del } from "./client"
 import type { Run, RunCreate } from "./types"
 
 export function listRuns(profileId: string) {
@@ -15,6 +15,10 @@ export function createRun(profileId: string, data: RunCreate) {
 
 export function cancelRun(profileId: string, runId: string) {
   return post<{ detail: string }>(`/profiles/${profileId}/runs/${runId}/cancel`)
+}
+
+export function deleteRun(profileId: string, runId: string) {
+  return del(`/profiles/${profileId}/runs/${runId}`)
 }
 
 export function listAllRuns(limit = 10) {

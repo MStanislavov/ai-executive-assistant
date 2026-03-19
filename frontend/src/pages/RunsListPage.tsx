@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { Play, Ban } from "lucide-react"
-import { listRuns, createRun, cancelRun } from "@/api/runs"
+import { Play, Ban, Trash2 } from "lucide-react"
+import { listRuns, createRun, cancelRun, deleteRun } from "@/api/runs"
 import type { Run, RunCreate } from "@/api/types"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner"
@@ -44,6 +44,8 @@ export default function RunsListPage() {
   const [loading, setLoading] = useState(true)
   const [mode, setMode] = useState<RunCreate["mode"]>("daily")
   const [cancelTarget, setCancelTarget] = useState<Run | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Run | null>(null)
+  const [filterMode, setFilterMode] = useState<string>("all")
 
   function load() {
     if (!profileId) return
@@ -69,6 +71,14 @@ export default function RunsListPage() {
     load()
   }
 
+  async function handleDelete(run: Run) {
+    if (!profileId) return
+    await deleteRun(profileId, run.id)
+    toast.success("Run and all results deleted")
+    setDeleteTarget(null)
+    load()
+  }
+
   if (loading) return <LoadingSpinner />
 
   return (
@@ -85,7 +95,6 @@ export default function RunsListPage() {
             <SelectContent>
               <SelectItem value="daily">Daily</SelectItem>
               <SelectItem value="weekly">Weekly</SelectItem>
-              <SelectItem value="cover_letter">Cover Letter</SelectItem>
             </SelectContent>
           </Select>
           <Button onClick={handleStart}>
@@ -94,13 +103,26 @@ export default function RunsListPage() {
         </div>
       </Card>
 
-      {runs.length === 0 ? (
+      {runs.filter((r) => r.mode !== "cover_letter").length === 0 ? (
         <EmptyState
           icon={<Play className="h-10 w-10" />}
           title="No runs yet"
           description="Start your first pipeline run above."
         />
       ) : (
+        <>
+        <div className="mb-4 max-w-xs">
+          <Select value={filterMode} onValueChange={setFilterMode}>
+            <SelectTrigger>
+              <SelectValue placeholder="Filter by mode..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All modes</SelectItem>
+              <SelectItem value="daily">Daily</SelectItem>
+              <SelectItem value="weekly">Weekly</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <Card>
           <Table>
             <TableHeader>
@@ -115,7 +137,7 @@ export default function RunsListPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {runs.map((r) => (
+              {runs.filter((r) => r.mode !== "cover_letter" && (filterMode === "all" || r.mode === filterMode)).map((r) => (
                 <TableRow
                   key={r.id}
                   className="cursor-pointer"
@@ -138,24 +160,39 @@ export default function RunsListPage() {
                     {r.finished_at ? new Date(r.finished_at).toLocaleString() : "-"}
                   </TableCell>
                   <TableCell>
-                    {(r.status === "running" || r.status === "pending") && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setCancelTarget(r)
-                        }}
-                      >
-                        <Ban className="h-4 w-4" />
-                      </Button>
-                    )}
+                    <div className="flex gap-1">
+                      {(r.status === "running" || r.status === "pending") && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setCancelTarget(r)
+                          }}
+                        >
+                          <Ban className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {r.status !== "running" && r.status !== "pending" && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setDeleteTarget(r)
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </Card>
+        </>
       )}
 
       <AlertDialog open={!!cancelTarget} onOpenChange={() => setCancelTarget(null)}>
@@ -170,6 +207,25 @@ export default function RunsListPage() {
             <AlertDialogCancel>No</AlertDialogCancel>
             <AlertDialogAction onClick={() => cancelTarget && handleCancel(cancelTarget)}>
               Yes, cancel
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete run and all results?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete run {deleteTarget?.id.slice(0, 8)} and all
+              jobs, certifications, courses, events, groups, trends, and cover letters
+              produced by it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteTarget && handleDelete(deleteTarget)}>
+              Delete all
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

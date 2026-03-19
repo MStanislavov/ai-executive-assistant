@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react"
 import { useParams, useNavigate, Link } from "react-router-dom"
-import { Save, Trash2, Upload, X, Plus, Play, Briefcase, FileEdit, Sparkles } from "lucide-react"
-import { getProfile, updateProfile, deleteProfile, uploadCv, extractSkillsFromCv } from "@/api/profiles"
+import { Save, Trash2, Upload, Download, X, Plus, Play, Briefcase, FileEdit, Sparkles } from "lucide-react"
+import { getProfile, updateProfile, deleteProfile, uploadCv, extractSkillsFromCv, exportProfile, createProfile } from "@/api/profiles"
 import type { Profile, ProfileUpdate } from "@/api/types"
 import { useProfiles } from "@/contexts/ProfileContext"
 import { PageHeader } from "@/components/shared/PageHeader"
@@ -103,6 +103,35 @@ export default function ProfilePage() {
     }
   }
 
+  async function handleExport() {
+    if (!profileId) return
+    const data = await exportProfile(profileId)
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `${profile?.name ?? "profile"}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.success("Profile exported")
+  }
+
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const text = await file.text()
+      const data = JSON.parse(text)
+      const created = await createProfile(data)
+      await refreshProfiles()
+      toast.success(`Profile "${created.name}" imported`)
+      navigate(`/profiles/${created.id}`)
+    } catch {
+      toast.error("Failed to import profile. Check the file format.")
+    }
+    e.target.value = ""
+  }
+
   if (loading) return <LoadingSpinner />
   if (!profile) return <p className="text-muted-foreground">Profile not found.</p>
 
@@ -116,6 +145,16 @@ export default function ProfilePage() {
             <Button onClick={handleSave} disabled={!canSave()}>
               <Save className="h-4 w-4 mr-2" /> Save
             </Button>
+            <Button variant="outline" onClick={handleExport}>
+              <Download className="h-4 w-4 mr-2" /> Export
+            </Button>
+            <Label
+              htmlFor="profile-import"
+              className="cursor-pointer inline-flex items-center gap-2 border rounded-md px-3 py-2 text-sm hover:bg-accent transition-colors"
+            >
+              <Upload className="h-4 w-4" /> Import
+            </Label>
+            <input id="profile-import" type="file" accept=".json" className="hidden" onChange={handleImport} />
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive">

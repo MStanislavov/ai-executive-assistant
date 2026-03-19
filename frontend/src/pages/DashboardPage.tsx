@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Users, Play, Plus, LayoutDashboard } from "lucide-react"
-import { createProfile } from "@/api/profiles"
+import { Users, Play, Plus, LayoutDashboard, Upload } from "lucide-react"
+import { createProfile, importProfile } from "@/api/profiles"
 import { listAllRuns } from "@/api/runs"
 import type { Run } from "@/api/types"
 import { useProfiles } from "@/contexts/ProfileContext"
@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { toast } from "sonner"
 
 export default function DashboardPage() {
   const { profiles, loading: profilesLoading, refresh: refreshProfiles } = useProfiles()
@@ -54,6 +55,22 @@ export default function DashboardPage() {
     navigate(`/profiles/${profile.id}`)
   }
 
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const text = await file.text()
+      const data = JSON.parse(text)
+      const created = await importProfile(data)
+      await refreshProfiles()
+      toast.success(`Profile "${created.name}" imported`)
+      navigate(`/profiles/${created.id}`)
+    } catch {
+      toast.error("Failed to import profile. Check the file format.")
+    }
+    e.target.value = ""
+  }
+
   if (loading || profilesLoading) return <LoadingSpinner />
 
   if (profiles.length === 0) {
@@ -63,10 +80,19 @@ export default function DashboardPage() {
         <EmptyState
           icon={<LayoutDashboard className="h-10 w-10" />}
           title="Welcome to AI Executive Assistant"
-          description="Create your first profile to get started with career intelligence pipelines."
+          description="Create your first profile or import an existing one to get started."
           actionLabel="Create Profile"
           onAction={() => setDialogOpen(true)}
         />
+        <div className="flex justify-center mt-4">
+          <Label
+            htmlFor="dashboard-import"
+            className="cursor-pointer inline-flex items-center gap-2 border rounded-md px-4 py-2 text-sm hover:bg-accent transition-colors"
+          >
+            <Upload className="h-4 w-4" /> Import Profile
+          </Label>
+          <input id="dashboard-import" type="file" accept=".json" className="hidden" onChange={handleImport} />
+        </div>
         <CreateProfileDialog
           open={dialogOpen}
           onOpenChange={setDialogOpen}
@@ -83,6 +109,14 @@ export default function DashboardPage() {
       <PageHeader
         title="Dashboard"
         actions={
+          <div className="flex gap-2">
+          <Label
+            htmlFor="dashboard-import-main"
+            className="cursor-pointer inline-flex items-center gap-2 border rounded-md px-3 py-2 text-sm hover:bg-accent transition-colors"
+          >
+            <Upload className="h-4 w-4" /> Import
+          </Label>
+          <input id="dashboard-import-main" type="file" accept=".json" className="hidden" onChange={handleImport} />
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button>
@@ -111,6 +145,7 @@ export default function DashboardPage() {
               </div>
             </DialogContent>
           </Dialog>
+          </div>
         }
       />
 

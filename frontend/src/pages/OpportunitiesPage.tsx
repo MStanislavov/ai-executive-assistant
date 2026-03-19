@@ -2,14 +2,14 @@ import { useEffect, useState } from "react"
 import { useParams, useSearchParams } from "react-router-dom"
 import {
   Briefcase, GraduationCap, BookOpen, Calendar, Users, TrendingUp,
-  Search, Pencil, Trash2, Check, X,
+  Search, Pencil, Trash2, Check, X, Target, ShieldAlert,
 } from "lucide-react"
 import {
   listJobs, listCertifications, listCourses, listEvents, listGroups, listTrends,
-  updateResult, deleteResult,
+  updateResult, deleteResult, getInsights,
 } from "@/api/results"
 import { listRuns } from "@/api/runs"
-import type { JobOpportunity, Certification, Course, Event, Group, Trend, Run } from "@/api/types"
+import type { JobOpportunity, Certification, Course, Event, Group, Trend, Run, ExecutiveInsights } from "@/api/types"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner"
 import { EmptyState } from "@/components/shared/EmptyState"
@@ -24,6 +24,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 function dedup<T extends { created_at: string }>(
   items: T[],
@@ -51,12 +61,17 @@ export default function OpportunitiesPage() {
   const [groups, setGroups] = useState<Group[]>([])
   const [trends, setTrends] = useState<Trend[]>([])
   const [runs, setRuns] = useState<Run[]>([])
+  const [insights, setInsights] = useState<ExecutiveInsights | null>(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState("")
+
+  const selectedRun = runs.find((r) => r.id === runId)
+  const isWeekly = selectedRun?.mode === "weekly"
 
   useEffect(() => {
     if (!profileId) return
     setLoading(true)
+    setInsights(null)
     Promise.all([
       listJobs(profileId, runId),
       listCertifications(profileId, runId),
@@ -73,7 +88,16 @@ export default function OpportunitiesPage() {
         setEvents(runId ? ev : dedup(ev, (x) => `${x.title}|${x.organizer ?? ""}`))
         setGroups(runId ? gr : dedup(gr, (x) => `${x.title}|${x.platform ?? ""}`))
         setTrends(runId ? tr : dedup(tr, (x) => `${x.title}|${x.source ?? ""}`))
-        setRuns(r)
+        // Only show runs that have at least one result
+        const allResults = [...j, ...ce, ...co, ...ev, ...gr, ...tr]
+        const runIdsWithResults = new Set(allResults.map((x) => x.run_id))
+        const filteredRuns = r.filter((run) => runIdsWithResults.has(run.id))
+        setRuns(filteredRuns)
+        // Fetch insights for weekly runs
+        const matchedRun = runId ? filteredRuns.find((run) => run.id === runId) : undefined
+        if (matchedRun?.mode === "weekly") {
+          getInsights(profileId, runId!).then(setInsights).catch(() => setInsights(null))
+        }
       })
       .finally(() => setLoading(false))
   }, [profileId, runId])
@@ -124,12 +148,85 @@ export default function OpportunitiesPage() {
         </div>
       )}
 
+      {isWeekly && insights && (
+        <div className="grid gap-4 md:grid-cols-2 mb-6">
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <Target className="h-5 w-5 text-primary" />
+                <CardTitle className="text-lg">Strategic Recommendations</CardTitle>
+              </div>
+              {insights.ceo_summary && (
+                <p className="text-sm text-muted-foreground mt-1">{insights.ceo_summary}</p>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {insights.strategic_recommendations.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No recommendations available.</p>
+              ) : (
+                insights.strategic_recommendations.map((rec, i) => (
+                  <div key={i} className="flex items-start gap-3 rounded-md border p-3">
+                    <Badge
+                      variant={rec.priority === "high" ? "destructive" : rec.priority === "medium" ? "default" : "secondary"}
+                      className="mt-0.5 shrink-0 text-xs"
+                    >
+                      {rec.priority}
+                    </Badge>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">{rec.area}</p>
+                      <p className="text-sm text-muted-foreground mt-0.5">{rec.recommendation}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="h-5 w-5 text-orange-500" />
+                <CardTitle className="text-lg">Risk Assessment</CardTitle>
+              </div>
+              {insights.cfo_summary && (
+                <p className="text-sm text-muted-foreground mt-1">{insights.cfo_summary}</p>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {insights.risk_assessments.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No risk assessments available.</p>
+              ) : (
+                insights.risk_assessments.map((ra, i) => (
+                  <div key={i} className="rounded-md border p-3 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium">{ra.area}</p>
+                      <Badge
+                        variant={ra.risk_level === "high" ? "destructive" : ra.risk_level === "medium" ? "default" : "secondary"}
+                        className="text-xs"
+                      >
+                        {ra.risk_level} risk
+                      </Badge>
+                    </div>
+                    <div className="flex gap-4 text-xs text-muted-foreground">
+                      <span>Time: {ra.time_investment}</span>
+                      <span>ROI: {ra.roi_estimate}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {totalCount === 0 ? (
-        <EmptyState
-          icon={<Briefcase className="h-10 w-10" />}
-          title="No results yet"
-          description="Run a daily or weekly pipeline to discover opportunities."
-        />
+        !(isWeekly && insights) && (
+          <EmptyState
+            icon={<Briefcase className="h-10 w-10" />}
+            title="No results yet"
+            description="Run a daily or weekly pipeline to discover opportunities."
+          />
+        )
       ) : (
         <Tabs defaultValue="jobs">
           <TabsList>
@@ -161,6 +258,10 @@ export default function OpportunitiesPage() {
                   }}
                   onDelete={async (id) => {
                     await deleteResult(profileId!, "jobs", id)
+                    setJobs((prev) => prev.filter((x) => x.id !== id))
+                  }}
+                  onForceDelete={async (id) => {
+                    await deleteResult(profileId!, "jobs", id, true)
                     setJobs((prev) => prev.filter((x) => x.id !== id))
                   }}
                 />
@@ -337,6 +438,7 @@ function ResultCard({
   badges,
   onEdit,
   onDelete,
+  onForceDelete,
 }: {
   id: string
   icon: React.ReactNode
@@ -347,10 +449,13 @@ function ResultCard({
   badges: string[]
   onEdit?: (id: string, newTitle: string) => Promise<void>
   onDelete?: (id: string) => Promise<void>
+  onForceDelete?: (id: string) => Promise<void>
 }) {
   const [editing, setEditing] = useState(false)
   const [editTitle, setEditTitle] = useState(title)
   const [saving, setSaving] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [conflictMessage, setConflictMessage] = useState("")
 
   async function handleSave() {
     if (!onEdit || editTitle.trim() === "" || editTitle === title) {
@@ -368,100 +473,149 @@ function ResultCard({
   }
 
   async function handleDelete() {
-    if (!onDelete || !window.confirm("Delete this item?")) return
-    await onDelete(id)
+    if (!onDelete) return
+    try {
+      await onDelete(id)
+      setConfirmDelete(false)
+    } catch (err: unknown) {
+      if (err && typeof err === "object" && "status" in err && (err as { status: number }).status === 409) {
+        setConfirmDelete(false)
+        setConflictMessage((err as { detail?: string }).detail ?? "This job has linked cover letters. Delete them too?")
+      }
+    }
+  }
+
+  async function handleForceConfirm() {
+    setConflictMessage("")
+    if (onForceDelete) {
+      await onForceDelete(id)
+    }
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex items-start gap-2 min-w-0 flex-1">
-            <span className="text-muted-foreground mt-0.5 shrink-0">{icon}</span>
-            {editing ? (
-              <div className="flex items-center gap-1 flex-1">
-                <Input
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="h-7 text-sm"
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleSave()
-                    if (e.key === "Escape") {
+    <>
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-start gap-2 min-w-0 flex-1">
+              <span className="text-muted-foreground mt-0.5 shrink-0">{icon}</span>
+              {editing ? (
+                <div className="flex items-center gap-1 flex-1">
+                  <Input
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="h-7 text-sm"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSave()
+                      if (e.key === "Escape") {
+                        setEditing(false)
+                        setEditTitle(title)
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="text-muted-foreground hover:text-foreground p-0.5"
+                  >
+                    <Check className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => {
                       setEditing(false)
                       setEditTitle(title)
-                    }
-                  }}
-                />
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="text-muted-foreground hover:text-foreground p-0.5"
-                >
-                  <Check className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => {
-                    setEditing(false)
-                    setEditTitle(title)
-                  }}
-                  className="text-muted-foreground hover:text-foreground p-0.5"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            ) : (
-              <CardTitle className="text-base leading-snug">{title}</CardTitle>
-            )}
-          </div>
-          {!editing && (onEdit || onDelete) && (
-            <div className="flex gap-1 shrink-0">
-              {onEdit && (
-                <button
-                  onClick={() => {
-                    setEditTitle(title)
-                    setEditing(true)
-                  }}
-                  className="text-muted-foreground hover:text-foreground p-0.5"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
-              )}
-              {onDelete && (
-                <button
-                  onClick={handleDelete}
-                  className="text-muted-foreground hover:text-destructive p-0.5"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+                    }}
+                    className="text-muted-foreground hover:text-foreground p-0.5"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <CardTitle className="text-base leading-snug">{title}</CardTitle>
               )}
             </div>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent>
-        {subtitle && <p className="text-xs text-muted-foreground mb-2">{subtitle}</p>}
-        {description && <p className="text-sm line-clamp-3">{description}</p>}
-        {badges.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-2">
-            {badges.map((b) => (
-              <Badge key={b} variant="secondary" className="text-xs">
-                {b}
-              </Badge>
-            ))}
+            {!editing && (onEdit || onDelete) && (
+              <div className="flex gap-1 shrink-0">
+                {onEdit && (
+                  <button
+                    onClick={() => {
+                      setEditTitle(title)
+                      setEditing(true)
+                    }}
+                    className="text-muted-foreground hover:text-foreground p-0.5"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                {onDelete && (
+                  <button
+                    onClick={() => setConfirmDelete(true)}
+                    className="text-muted-foreground hover:text-destructive p-0.5"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
-        )}
-        {url && (
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-primary hover:underline mt-2 inline-block"
-          >
-            View source
-          </a>
-        )}
-      </CardContent>
-    </Card>
+        </CardHeader>
+        <CardContent>
+          {subtitle && <p className="text-xs text-muted-foreground mb-2">{subtitle}</p>}
+          {description && <p className="text-sm line-clamp-3">{description}</p>}
+          {badges.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-2">
+              {badges.map((b) => (
+                <Badge key={b} variant="secondary" className="text-xs">
+                  {b}
+                </Badge>
+              ))}
+            </div>
+          )}
+          {url && (
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-primary hover:underline mt-2 inline-block"
+            >
+              View source
+            </a>
+          )}
+        </CardContent>
+      </Card>
+
+      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this item?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. "{title}" will be permanently deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!conflictMessage} onOpenChange={() => setConflictMessage("")}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete job and cover letters?</AlertDialogTitle>
+            <AlertDialogDescription>{conflictMessage}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleForceConfirm}>
+              Delete all
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }

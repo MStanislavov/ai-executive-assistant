@@ -28,3 +28,11 @@ export function uploadCv(profileId: string, file: File) {
 export function extractSkillsFromCv(profileId: string) {
   return post<{ skills: string[] }>(`/profiles/${profileId}/cv/extract-skills`)
 }
+
+export function exportProfile(id: string) {
+  return get<{ name: string; targets: string[] | null; constraints: string[] | null; skills: string[] | null }>(`/profiles/${id}/export`)
+}
+
+export function importProfile(data: { name: string; targets?: string[] | null; constraints?: string[] | null; skills?: string[] | null }) {
+  return post<Profile>("/profiles/import", data)
+}
