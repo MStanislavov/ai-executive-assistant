@@ -14,6 +14,9 @@ agents:
   cfo:
     allowed_tools: [llm_structured_output]
     denied_tools: [web_search, web_fetch]
+  cv_summarizer:
+    allowed_tools: [llm_structured_output]
+    denied_tools: [web_search, web_fetch]
   cover_letter_agent:
     allowed_tools: [llm_generate_text]
     denied_tools: [web_search, web_fetch]

@@ -14,6 +14,9 @@ agents:
   cfo:
     inputs: [formatted_jobs, formatted_certifications, formatted_courses, formatted_events, formatted_groups, formatted_trends, profile_targets]
     outputs: [risk_assessments, cfo_summary]
+  cv_summarizer:
+    inputs: [raw_cv_content]
+    outputs: [summarized_cv]
   cover_letter_agent:
     inputs: [cv_content, jd_text, job_opportunity]
     outputs: [cover_letter_content]
