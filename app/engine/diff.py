@@ -14,10 +14,9 @@ class DiffEngine:
         self._audit_writer = audit_writer
 
     def diff_runs(self, run_id_a: str, run_id_b: str) -> dict[str, Any]:
-        """Compare two runs and return structured diff.
+        """Compare two runs and return a structured diff.
 
-        Returns a dictionary with additions, removals, changes to
-        opportunities, and a summary section.
+        Returns a dictionary with additions, removals, changes, and a summary.
         """
         bundle_a = self._audit_writer.read_bundle(run_id_a)
         bundle_b = self._audit_writer.read_bundle(run_id_b)
@@ -30,51 +29,55 @@ class DiffEngine:
         artifacts_a = bundle_a.get("final_artifacts", {})
         artifacts_b = bundle_b.get("final_artifacts", {})
 
-        opps_a = artifacts_a.get("opportunities", [])
-        opps_b = artifacts_b.get("opportunities", [])
+        all_additions: list[dict[str, Any]] = []
+        all_removals: list[dict[str, Any]] = []
+        all_changes: list[dict[str, Any]] = []
+        total_a = 0
+        total_b = 0
 
-        # Build lookup by title+source fingerprint
-        def fingerprint(opp: dict[str, Any]) -> str:
-            return f"{opp.get('title', '')}|{opp.get('source', '')}"
+        for entity_type in ("jobs", "certifications", "courses", "events", "groups", "trends"):
+            items_a = artifacts_a.get(entity_type, [])
+            items_b = artifacts_b.get(entity_type, [])
+            total_a += len(items_a)
+            total_b += len(items_b)
 
-        fps_a = {fingerprint(o): o for o in opps_a}
-        fps_b = {fingerprint(o): o for o in opps_b}
+            # Build lookup by title fingerprint
+            def fingerprint(item: dict[str, Any]) -> str:
+                return f"{entity_type}|{item.get('title', '')}"
 
-        additions = [fps_b[fp] for fp in sorted(set(fps_b) - set(fps_a))]
-        removals = [fps_a[fp] for fp in sorted(set(fps_a) - set(fps_b))]
+            fps_a = {fingerprint(o): o for o in items_a}
+            fps_b = {fingerprint(o): o for o in items_b}
 
-        # Check for changes in shared opportunities
-        changes: list[dict[str, Any]] = []
-        for fp in sorted(set(fps_a) & set(fps_b)):
-            a, b = fps_a[fp], fps_b[fp]
-            diffs: dict[str, Any] = {}
-            for key in ("description", "url", "opportunity_type"):
-                if a.get(key) != b.get(key):
-                    diffs[key] = {"old": a.get(key), "new": b.get(key)}
-            if diffs:
-                changes.append({"title": a.get("title", ""), "changes": diffs})
+            for fp in sorted(set(fps_b) - set(fps_a)):
+                all_additions.append(fps_b[fp])
+            for fp in sorted(set(fps_a) - set(fps_b)):
+                all_removals.append(fps_a[fp])
 
-        # Verifier status comparison
-        verifier_a = bundle_a.get("verifier_report", {}).get(
-            "overall_status", "unknown"
-        )
-        verifier_b = bundle_b.get("verifier_report", {}).get(
-            "overall_status", "unknown"
-        )
+            # Check for changes in shared items
+            for fp in sorted(set(fps_a) & set(fps_b)):
+                a, b = fps_a[fp], fps_b[fp]
+                diffs: dict[str, Any] = {}
+                for key in ("description", "url"):
+                    if a.get(key) != b.get(key):
+                        diffs[key] = {"old": a.get(key), "new": b.get(key)}
+                if diffs:
+                    all_changes.append({
+                        "title": a.get("title", ""),
+                        "entity_type": entity_type,
+                        "changes": diffs,
+                    })
 
         return {
             "run_a": run_id_a,
             "run_b": run_id_b,
-            "additions": additions,
-            "removals": removals,
-            "changes": changes,
+            "additions": all_additions,
+            "removals": all_removals,
+            "changes": all_changes,
             "summary": {
-                "opportunities_a": len(opps_a),
-                "opportunities_b": len(opps_b),
-                "added": len(additions),
-                "removed": len(removals),
-                "changed": len(changes),
-                "verifier_a": verifier_a,
-                "verifier_b": verifier_b,
+                "items_a": total_a,
+                "items_b": total_b,
+                "added": len(all_additions),
+                "removed": len(all_removals),
+                "changed": len(all_changes),
             },
         }

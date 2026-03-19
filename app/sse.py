@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Any, AsyncGenerator
 
 
@@ -46,13 +47,11 @@ event_manager = RunEventManager()
 class LangGraphCallbackHandler:
     """Bridges LangGraph node execution events to SSE."""
 
-    def __init__(self, run_id: str, event_manager: RunEventManager) -> None:
+    def __init__(self, run_id: str, event_manager_lg: RunEventManager) -> None:
         self.run_id = run_id
-        self.event_manager = event_manager
+        self.event_manager = event_manager_lg
 
     async def on_node_start(self, node_name: str) -> None:
-        from datetime import datetime, timezone
-
         await self.event_manager.publish(
             self.run_id,
             {
@@ -62,9 +61,7 @@ class LangGraphCallbackHandler:
             },
         )
 
-    async def on_node_end(self, node_name: str, output: dict[str, Any] | None = None) -> None:
-        from datetime import datetime, timezone
-
+    async def on_node_end(self, node_name: str) -> None:
         await self.event_manager.publish(
             self.run_id,
             {
@@ -75,8 +72,6 @@ class LangGraphCallbackHandler:
         )
 
     async def on_run_end(self) -> None:
-        from datetime import datetime, timezone
-
         await self.event_manager.publish(
             self.run_id,
             {

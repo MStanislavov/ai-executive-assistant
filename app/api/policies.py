@@ -1,31 +1,16 @@
-from pathlib import Path
+"""Policy HTTP endpoints: list and get YAML policies."""
 
-import yaml
 from fastapi import APIRouter, HTTPException
 
-from app.config import settings
 from app.schemas.policy import PolicyRead
+from app.services import policy_service
 
 router = APIRouter(tags=["policies"])
 
 
-def _load_policy(path: Path) -> dict:
-    """Load and parse a YAML policy file."""
-    with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
-
-
 @router.get("/policies")
 async def list_policies() -> list[PolicyRead]:
-    policy_dir = settings.policy_dir
-    if not policy_dir.is_dir():
-        return []
-    policies: list[PolicyRead] = []
-    for path in sorted(policy_dir.glob("*.yaml")):
-        policies.append(
-            PolicyRead(name=path.stem, content=_load_policy(path))
-        )
-    return policies
+    return policy_service.list_policies()
 
 
 @router.get(
@@ -33,7 +18,7 @@ async def list_policies() -> list[PolicyRead]:
     responses={404: {"description": "Policy not found"}},
 )
 async def get_policy(policy_name: str) -> PolicyRead:
-    path = settings.policy_dir / f"{policy_name}.yaml"
-    if not path.is_file():
+    result = policy_service.get_policy(policy_name)
+    if result is None:
         raise HTTPException(status_code=404, detail="Policy not found")
-    return PolicyRead(name=policy_name, content=_load_policy(path))
+    return result

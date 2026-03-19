@@ -31,7 +31,7 @@ class PolicyEngine:
     """Loads ``policy/*.yaml`` files and provides query/enforcement helpers.
 
     The engine is intentionally stateless beyond the cached policy dict and
-    version hash.  Call :meth:`reload` after editing YAML on disk.
+    version hash.  Call: meth:`reload` after editing YAML on disk.
     """
 
     def __init__(self, policy_dir: Path | str = "policy") -> None:
@@ -75,7 +75,7 @@ class PolicyEngine:
     # ------------------------------------------------------------------
 
     def is_tool_allowed(self, agent: str, tool: str) -> bool:
-        """Return *True* only if *tool* is on the agent's allow-list and
+        """Return *True* only if *tool* is on the agent's allowlist and
         **not** on its deny-list.  Unknown agents are denied by default."""
         tools_policy = self._policies.get("tools", {})
         agent_config = tools_policy.get("agents", {}).get(agent)
@@ -92,8 +92,11 @@ class PolicyEngine:
     # ------------------------------------------------------------------
 
     def is_source_allowed(self, scout: str, source: str) -> bool:
-        """Return *True* only if *source* matches the scout's allow-list and
-        does **not** match any deny pattern."""
+        """Return *True* unless *source* matches a denied pattern.
+
+        All sources are allowed by default; only explicitly blacklisted
+        patterns cause rejection.  Unknown scouts are denied.
+        """
         sources_policy = self._policies.get("sources", {})
         scout_config = sources_policy.get("scouts", {}).get(scout)
         if scout_config is None:
@@ -102,11 +105,7 @@ class PolicyEngine:
         for pattern in denied:
             if self._match_source_pattern(pattern, source):
                 return False
-        allowed = scout_config.get("allowed_sources", [])
-        for pattern in allowed:
-            if self._match_source_pattern(pattern, source):
-                return True
-        return False
+        return True
 
     @staticmethod
     def _match_source_pattern(pattern: str, source: str) -> bool:

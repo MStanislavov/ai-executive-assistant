@@ -1,0 +1,106 @@
+"""Audit business logic: audit trail, verifier report, replay, diff."""
+
+from __future__ import annotations
+
+import uuid
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
+from app.engine.audit_writer import AuditWriter
+from app.engine.diff import DiffEngine
+from app.engine.replay import ReplayEngine
+from app.models.run import Run
+
+
+async def _get_run_or_raise(
+    db: AsyncSession, run_id: str, profile_id: str
+) -> Run:
+    """Fetch a run and verify it belongs to the given profile.
+
+    Raises LookupError if not found.
+    """
+    run = await db.get(Run, run_id)
+    if run is None or run.profile_id != profile_id:
+        raise LookupError("Run not found")
+    return run
+
+
+async def get_audit_trail(
+    db: AsyncSession, profile_id: str, run_id: str
+) -> dict:
+    """Return the full audit event log for a run."""
+    await _get_run_or_raise(db, run_id, profile_id)
+    writer = AuditWriter(artifacts_dir=settings.artifacts_dir)
+    events = writer.read_log(run_id)
+    return {"run_id": run_id, "events": events}
+
+
+async def get_verifier_report(
+    db: AsyncSession, profile_id: str, run_id: str
+) -> dict:
+    """Return the verifier report from the run bundle.
+
+    Raises LookupError if run or bundle not found.
+    """
+    await _get_run_or_raise(db, run_id, profile_id)
+    writer = AuditWriter(artifacts_dir=settings.artifacts_dir)
+    bundle = writer.read_bundle(run_id)
+    if bundle is None:
+        raise LookupError("No audit bundle found for this run")
+    return bundle.get("verifier_report", {})
+
+
+async def replay_run(
+    db: AsyncSession, profile_id: str, run_id: str, mode: str
+) -> dict:
+    """Replay a previous run in strict or refresh mode.
+
+    Raises LookupError if run or bundle not found, ValueError on other errors.
+    """
+    await _get_run_or_raise(db, run_id, profile_id)
+    writer = AuditWriter(artifacts_dir=settings.artifacts_dir)
+    replay_engine = ReplayEngine(audit_writer=writer)
+
+    new_run_id = str(uuid.uuid4())
+
+    if mode == "strict":
+        result = replay_engine.replay_strict(
+            original_run_id=run_id,
+            new_run_id=new_run_id,
+        )
+    else:
+        bundle = writer.read_bundle(run_id)
+        if bundle is None:
+            raise LookupError("No audit bundle found for this run")
+        new_result = bundle.get("final_artifacts", {})
+        result = replay_engine.replay_refresh(
+            original_run_id=run_id,
+            new_run_id=new_run_id,
+            new_result=new_result,
+        )
+
+    # Persist the replay bundle
+    writer.create_run_bundle(
+        run_id=new_run_id,
+        profile_hash=profile_id,
+        policy_version_hash="",
+        verifier_report=result.get("verifier_report", {}),
+        final_artifacts=result.get("result", {}),
+    )
+
+    return result
+
+
+async def diff_runs(
+    db: AsyncSession, profile_id: str, run_id: str, other_run_id: str
+) -> dict:
+    """Return a structured diff between two runs.
+
+    Raises LookupError if either run not found.
+    """
+    await _get_run_or_raise(db, run_id, profile_id)
+    await _get_run_or_raise(db, other_run_id, profile_id)
+    writer = AuditWriter(artifacts_dir=settings.artifacts_dir)
+    diff_engine = DiffEngine(audit_writer=writer)
+    return diff_engine.diff_runs(run_id, other_run_id)

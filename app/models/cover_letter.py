@@ -16,14 +16,13 @@ class CoverLetter(Base):
     profile_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("user_profiles.id"), nullable=False
     )
-    opportunity_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("opportunities.id"), nullable=True
+    job_opportunity_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("job_opportunities.id"), nullable=True
     )
     run_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("runs.id"), nullable=True
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    evidence_ids_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

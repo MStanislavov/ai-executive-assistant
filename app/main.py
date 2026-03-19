@@ -1,3 +1,5 @@
+import logging
+import uvicorn
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -5,11 +7,21 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import profiles, runs, audit, opportunities, cover_letters, policies
+from app.api import profiles, runs, audit, results, cover_letters, policies
+from app.config import settings as _settings
 from app.db import engine, Base
 
 # Import all models so Base.metadata knows about them
 from app import models  # noqa: F401
+
+# Configure logging from settings
+_log_level = getattr(logging, _settings.log_level.upper(), logging.INFO)
+logging.basicConfig(
+    level=logging.WARNING,
+    format="%(levelname)s:%(name)s:%(message)s",
+)
+# Let app loggers use the configured level; keep third-party libs at WARNING
+logging.getLogger("app").setLevel(_log_level)
 
 
 @asynccontextmanager
@@ -34,14 +46,19 @@ if spa_assets.is_dir():
 app.include_router(profiles.router, prefix="/api")
 app.include_router(runs.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
-app.include_router(opportunities.router, prefix="/api")
+app.include_router(results.router, prefix="/api")
 app.include_router(cover_letters.router, prefix="/api")
 app.include_router(policies.router, prefix="/api")
 
 
-# SPA catch-all: any non-API path returns index.html
+# SPA catch-all: serve static files if they exist, otherwise index.html
 @app.get("/{full_path:path}")
 async def spa_catch_all(full_path: str):
+    # Serve static files (e.g. favicon.svg) directly if present
+    if full_path:
+        static_file = spa_dir / full_path
+        if static_file.is_file() and spa_dir in static_file.resolve().parents:
+            return FileResponse(str(static_file))
     index = spa_dir / "index.html"
     if not index.is_file():
         return JSONResponse(
@@ -52,10 +69,6 @@ async def spa_catch_all(full_path: str):
 
 
 if __name__ == "__main__":
-    import uvicorn
-
-    from app.config import settings as _settings
-
     uvicorn.run(
         "app.main:app",
         host=_settings.app_host,

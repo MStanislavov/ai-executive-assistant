@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
 from app.engine.audit_writer import AuditWriter
 
@@ -72,42 +72,21 @@ class ReplayEngine:
         """Compare original and refreshed results for content drift."""
         drift_items: list[dict[str, Any]] = []
 
-        orig_opps = original.get("opportunities", [])
-        new_opps = refreshed.get(
-            "opportunities", refreshed.get("ranked_opportunities", [])
-        )
+        # Compare across all entity types
+        for entity_type in ("jobs", "certifications", "courses", "events", "groups", "trends"):
+            orig_items = original.get(entity_type, [])
+            new_items = refreshed.get(entity_type, [])
 
-        orig_titles = {o.get("title", "") for o in orig_opps}
-        new_titles = {o.get("title", "") for o in new_opps}
+            orig_titles = {o.get("title", "") for o in orig_items}
+            new_titles = {o.get("title", "") for o in new_items}
 
-        for title in sorted(new_titles - orig_titles):
-            drift_items.append(
-                {"type": "addition", "entity": "opportunity", "title": title}
-            )
-        for title in sorted(orig_titles - new_titles):
-            drift_items.append(
-                {"type": "removal", "entity": "opportunity", "title": title}
-            )
-
-        # Evidence hash drift (compare by evidence id)
-        orig_evidence = {
-            e.get("id", ""): e.get("content_hash", "")
-            for e in original.get("evidence_items", [])
-        }
-        new_evidence = {
-            e.get("id", ""): e.get("content_hash", "")
-            for e in refreshed.get("evidence_items", [])
-        }
-        for eid in sorted(set(orig_evidence) & set(new_evidence)):
-            if orig_evidence[eid] != new_evidence[eid]:
+            for title in sorted(new_titles - orig_titles):
                 drift_items.append(
-                    {
-                        "type": "hash_changed",
-                        "entity": "evidence",
-                        "evidence_id": eid,
-                        "old_hash": orig_evidence[eid],
-                        "new_hash": new_evidence[eid],
-                    }
+                    {"type": "addition", "entity": entity_type, "title": title}
+                )
+            for title in sorted(orig_titles - new_titles):
+                drift_items.append(
+                    {"type": "removal", "entity": entity_type, "title": title}
                 )
 
         return drift_items
