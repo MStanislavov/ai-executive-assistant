@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from "react"
-import { useParams } from "react-router-dom"
-import { RefreshCw, Ban, GitCompare } from "lucide-react"
+import { useParams, useNavigate } from "react-router-dom"
+import { RefreshCw, Ban, GitCompare, Eye } from "lucide-react"
 import { getRun, cancelRun } from "@/api/runs"
-import { getAudit, getVerifierReport, replay } from "@/api/audit"
+import { getAudit, replay } from "@/api/audit"
+import { listJobs, listCertifications, listCourses, listEvents, listGroups, listTrends } from "@/api/results"
 import type { Run, AuditEvent, SSEEvent } from "@/api/types"
 import { useSSE } from "@/hooks/useSSE"
 import { PageHeader } from "@/components/shared/PageHeader"
@@ -12,34 +13,20 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { toast } from "sonner"
 
-const AGENT_NAMES = [
-  "job_scout",
-  "cert_scout",
-  "trend_scout",
-  "extractor",
-  "coordinator",
-  "ceo",
-  "cfo",
-  "cover_letter_agent",
-  "verifier",
-  "audit_writer",
-]
+const AGENTS_BY_MODE: Record<string, string[]> = {
+  daily: ["goal_extractor", "web_scraper", "data_formatter", "audit_writer"],
+  weekly: ["goal_extractor", "web_scraper", "data_formatter", "ceo", "cfo", "audit_writer"],
+  cover_letter: ["cover_letter_agent", "audit_writer"],
+}
 
 type AgentStatus = "idle" | "running" | "complete"
 
-function deriveAgentStatuses(events: SSEEvent[]): Record<string, AgentStatus> {
+function deriveAgentStatuses(mode: string, events: SSEEvent[]): Record<string, AgentStatus> {
+  const agents = AGENTS_BY_MODE[mode] ?? AGENTS_BY_MODE.daily
   const statuses: Record<string, AgentStatus> = {}
-  for (const name of AGENT_NAMES) statuses[name] = "idle"
+  for (const name of agents) statuses[name] = "idle"
   for (const e of events) {
     if (e.agent && e.type === "agent_started") statuses[e.agent] = "running"
     if (e.agent && e.type === "agent_completed") statuses[e.agent] = "complete"
@@ -49,9 +36,10 @@ function deriveAgentStatuses(events: SSEEvent[]): Record<string, AgentStatus> {
 
 export default function RunDetailPage() {
   const { profileId, runId } = useParams()
+  const navigate = useNavigate()
   const [run, setRun] = useState<Run | null>(null)
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([])
-  const [verifierReport, setVerifierReport] = useState<Record<string, unknown> | null>(null)
+  const [outputs, setOutputs] = useState<Record<string, unknown[]> | null>(null)
   const [loading, setLoading] = useState(true)
   const { events: sseEvents, done: sseDone } = useSSE(
     profileId,
@@ -61,13 +49,24 @@ export default function RunDetailPage() {
   const load = useCallback(() => {
     if (!profileId || !runId) return
     getRun(profileId, runId)
-      .then(setRun)
+      .then((r) => {
+        setRun(r)
+        if (r.status === "completed" || r.status === "failed") {
+          Promise.all([
+            listJobs(profileId, runId),
+            listCertifications(profileId, runId),
+            listCourses(profileId, runId),
+            listEvents(profileId, runId),
+            listGroups(profileId, runId),
+            listTrends(profileId, runId),
+          ]).then(([j, ce, co, ev, gr, tr]) => {
+            setOutputs({ jobs: j, certifications: ce, courses: co, events: ev, groups: gr, trends: tr })
+          })
+        }
+      })
       .finally(() => setLoading(false))
     getAudit(profileId, runId)
       .then((a) => setAuditEvents(a.events))
-      .catch(() => {})
-    getVerifierReport(profileId, runId)
-      .then(setVerifierReport)
       .catch(() => {})
   }, [profileId, runId])
 
@@ -95,7 +94,7 @@ export default function RunDetailPage() {
   if (!run) return <p className="text-muted-foreground">Run not found.</p>
 
   const isActive = run.status === "running" || run.status === "pending"
-  const agentStatuses = deriveAgentStatuses(sseEvents)
+  const agentStatuses = deriveAgentStatuses(run.mode, sseEvents)
 
   return (
     <div>
@@ -125,7 +124,7 @@ export default function RunDetailPage() {
       {/* Run info card */}
       <Card className="mb-6">
         <CardContent className="pt-6">
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-3">
             <div>
               <p className="text-xs text-muted-foreground">Mode</p>
               <Badge variant="outline">{run.mode}</Badge>
@@ -133,10 +132,6 @@ export default function RunDetailPage() {
             <div>
               <p className="text-xs text-muted-foreground">Status</p>
               <StatusBadge status={run.status} />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Verifier</p>
-              <StatusBadge status={run.verifier_status} />
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Duration</p>
@@ -160,7 +155,7 @@ export default function RunDetailPage() {
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">
-              {AGENT_NAMES.map((name) => {
+              {(AGENTS_BY_MODE[run.mode] ?? AGENTS_BY_MODE.daily).map((name: string) => {
                 const s = agentStatuses[name]
                 return (
                   <div key={name} className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs">
@@ -186,24 +181,36 @@ export default function RunDetailPage() {
       <Tabs defaultValue="audit">
         <TabsList>
           <TabsTrigger value="audit">Audit Trail</TabsTrigger>
-          <TabsTrigger value="verifier">Verifier Report</TabsTrigger>
           <TabsTrigger value="outputs">Outputs</TabsTrigger>
+          {!isActive && run.status === "completed" && (
+            <TabsTrigger
+              value="results"
+              onClick={() => navigate(`/profiles/${profileId}/results?run_id=${runId}`)}
+              className="text-primary"
+            >
+              <Eye className="h-4 w-4 mr-1" /> View Results
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="audit">
           <AuditTimeline events={auditEvents} />
         </TabsContent>
 
-        <TabsContent value="verifier">
-          <VerifierReportView report={verifierReport} />
-        </TabsContent>
-
         <TabsContent value="outputs">
           <Card>
             <CardContent className="pt-6">
-              <pre className="bg-muted rounded-md p-4 text-xs font-mono overflow-x-auto whitespace-pre-wrap max-h-[600px]">
-                {run.audit_path ? `Artifacts stored at: ${run.audit_path}` : "No outputs available."}
-              </pre>
+              {outputs ? (
+                <pre className="bg-muted rounded-md p-4 text-xs font-mono overflow-x-auto whitespace-pre-wrap max-h-[600px]">
+                  {JSON.stringify(outputs, null, 2)}
+                </pre>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {run.status === "completed" || run.status === "failed"
+                    ? "Loading outputs..."
+                    : "Outputs will be available after the run completes."}
+                </p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -220,7 +227,6 @@ function AuditTimeline({ events }: { events: AuditEvent[] }) {
   const dotColor: Record<string, string> = {
     agent_start: "bg-blue-500",
     agent_end: "bg-green-500",
-    verifier: "bg-yellow-500",
     error: "bg-red-500",
   }
 
@@ -233,9 +239,9 @@ function AuditTimeline({ events }: { events: AuditEvent[] }) {
           />
           <p className="text-xs text-muted-foreground">{e.timestamp}</p>
           <p className="text-sm font-medium">
-            {e.agent} — <span className="font-normal text-muted-foreground">{e.event_type}</span>
+            {e.agent}, <span className="font-normal text-muted-foreground">{e.event_type}</span>
           </p>
-          {Object.keys(e.data).length > 0 && (
+          {e.data && Object.keys(e.data).length > 0 && (
             <pre className="mt-1 bg-muted rounded p-2 text-xs font-mono overflow-x-auto">
               {JSON.stringify(e.data, null, 2)}
             </pre>
@@ -243,55 +249,5 @@ function AuditTimeline({ events }: { events: AuditEvent[] }) {
         </div>
       ))}
     </div>
-  )
-}
-
-function VerifierReportView({ report }: { report: Record<string, unknown> | null }) {
-  if (!report || Object.keys(report).length === 0) {
-    return <p className="text-sm text-muted-foreground py-4">No verifier report available.</p>
-  }
-
-  const overall = (report.overall_status as string) ?? "unknown"
-  const checks = (report.checks as Array<Record<string, unknown>>) ?? []
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-3">
-          <CardTitle className="text-base">Overall Status</CardTitle>
-          <StatusBadge status={overall} />
-        </div>
-      </CardHeader>
-      <CardContent>
-        {checks.length > 0 ? (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Check</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Details</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {checks.map((c, i) => (
-                <TableRow key={i}>
-                  <TableCell className="text-sm">{String(c.name ?? c.check ?? `Check ${i + 1}`)}</TableCell>
-                  <TableCell>
-                    <StatusBadge status={String(c.status ?? "unknown")} />
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {c.message ? String(c.message) : "-"}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        ) : (
-          <pre className="bg-muted rounded-md p-4 text-xs font-mono overflow-x-auto whitespace-pre-wrap">
-            {JSON.stringify(report, null, 2)}
-          </pre>
-        )}
-      </CardContent>
-    </Card>
   )
 }

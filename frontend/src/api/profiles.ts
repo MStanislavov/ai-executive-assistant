@@ -22,5 +22,9 @@ export function deleteProfile(id: string) {
 }
 
 export function uploadCv(profileId: string, file: File) {
-  return upload<{ detail: string; cv_path: string }>(`/profiles/${profileId}/cv`, file)
+  return upload<Profile>(`/profiles/${profileId}/cv`, file)
+}
+
+export function extractSkillsFromCv(profileId: string) {
+  return post<{ skills: string[] }>(`/profiles/${profileId}/cv/extract-skills`)
 }

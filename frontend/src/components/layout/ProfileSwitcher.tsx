@@ -1,10 +1,8 @@
-import { useEffect, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { Play, FileText, Briefcase, FileEdit, ChevronDown } from "lucide-react"
 import { NavLink } from "react-router-dom"
 import { cn } from "@/lib/utils"
-import { listProfiles } from "@/api/profiles"
-import type { Profile } from "@/api/types"
+import { useProfiles } from "@/contexts/ProfileContext"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,18 +13,14 @@ import { Button } from "@/components/ui/button"
 
 const profileNav = [
   { label: "Runs", suffix: "runs", icon: Play },
-  { label: "Opportunities", suffix: "opportunities", icon: Briefcase },
+  { label: "Results", suffix: "results", icon: Briefcase },
   { label: "Cover Letters", suffix: "cover-letters", icon: FileEdit },
 ]
 
 export function ProfileSwitcher() {
-  const [profiles, setProfiles] = useState<Profile[]>([])
+  const { profiles } = useProfiles()
   const { profileId } = useParams()
   const navigate = useNavigate()
-
-  useEffect(() => {
-    listProfiles().then(setProfiles).catch(() => {})
-  }, [])
 
   const active = profiles.find((p) => p.id === profileId)
 

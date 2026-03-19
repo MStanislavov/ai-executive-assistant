@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react"
 import { useParams } from "react-router-dom"
-import { FileEdit, Plus } from "lucide-react"
+import { FileEdit, Plus, Loader2 } from "lucide-react"
 import { listCoverLetters, createCoverLetter } from "@/api/coverLetters"
-import { listOpportunities } from "@/api/opportunities"
-import type { CoverLetter, Opportunity } from "@/api/types"
+import { listJobs } from "@/api/results"
+import type { CoverLetter, JobOpportunity } from "@/api/types"
+import { useSSE } from "@/hooks/useSSE"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner"
 import { EmptyState } from "@/components/shared/EmptyState"
@@ -31,35 +32,49 @@ import { toast } from "sonner"
 export default function CoverLettersPage() {
   const { profileId } = useParams()
   const [letters, setLetters] = useState<CoverLetter[]>([])
-  const [opportunities, setOpportunities] = useState<Opportunity[]>([])
+  const [jobs, setJobs] = useState<JobOpportunity[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [selectedOpp, setSelectedOpp] = useState<string>("")
+  const [selectedJob, setSelectedJob] = useState<string>("")
   const [jdText, setJdText] = useState("")
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [generatingRunId, setGeneratingRunId] = useState<string | undefined>(undefined)
+
+  const { done: sseDone } = useSSE(profileId, generatingRunId)
 
   function load() {
     if (!profileId) return
-    Promise.all([listCoverLetters(profileId), listOpportunities(profileId)])
-      .then(([cl, opps]) => {
+    Promise.all([listCoverLetters(profileId), listJobs(profileId)])
+      .then(([cl, j]) => {
         setLetters(cl)
-        setOpportunities(opps)
+        setJobs(j)
       })
       .finally(() => setLoading(false))
   }
 
   useEffect(() => { load() }, [profileId])
 
+  // Reload when SSE signals generation complete
+  useEffect(() => {
+    if (sseDone && generatingRunId) {
+      setGeneratingRunId(undefined)
+      load()
+    }
+  }, [sseDone, generatingRunId])
+
   async function handleGenerate() {
     if (!profileId) return
-    await createCoverLetter(profileId, {
-      opportunity_id: selectedOpp || undefined,
+    const cl = await createCoverLetter(profileId, {
+      job_opportunity_id: selectedJob || undefined,
       jd_text: jdText || undefined,
     })
     toast.success("Cover letter generation started")
     setDialogOpen(false)
-    setSelectedOpp("")
+    setSelectedJob("")
     setJdText("")
+    if (cl.run_id) {
+      setGeneratingRunId(cl.run_id)
+    }
     load()
   }
 
@@ -83,22 +98,22 @@ export default function CoverLettersPage() {
               </DialogHeader>
               <div className="space-y-4 pt-2">
                 <div>
-                  <Label>Select Opportunity (optional)</Label>
-                  <Select value={selectedOpp} onValueChange={setSelectedOpp}>
+                  <Label className="mb-2 block">Select Job (optional)</Label>
+                  <Select value={selectedJob} onValueChange={setSelectedJob}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Choose an opportunity..." />
+                      <SelectValue placeholder="Choose a job..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {opportunities.map((o) => (
-                        <SelectItem key={o.id} value={o.id}>
-                          {o.title}
+                      {jobs.map((j) => (
+                        <SelectItem key={j.id} value={j.id}>
+                          {j.title}{j.company ? ` at ${j.company}` : ""}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label>Or paste job description</Label>
+                  <Label className="mb-2 block">Or paste job description</Label>
                   <Textarea
                     value={jdText}
                     onChange={(e) => setJdText(e.target.value)}
@@ -119,50 +134,58 @@ export default function CoverLettersPage() {
         <EmptyState
           icon={<FileEdit className="h-10 w-10" />}
           title="No cover letters yet"
-          description="Generate a cover letter from an opportunity or a raw job description."
+          description="Generate a cover letter from a job or a raw job description."
           actionLabel="Generate"
           onAction={() => setDialogOpen(true)}
         />
       ) : (
         <div className="space-y-4">
-          {letters.map((cl) => (
-            <Card
-              key={cl.id}
-              className="cursor-pointer"
-              onClick={() => setExpanded(expanded === cl.id ? null : cl.id)}
-            >
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">
-                    Cover Letter — {new Date(cl.created_at).toLocaleDateString()}
-                  </CardTitle>
-                  <div className="flex gap-1">
-                    {cl.opportunity_id && (
-                      <Badge variant="secondary" className="text-xs">
-                        Opportunity linked
-                      </Badge>
-                    )}
-                    {cl.evidence_ids.length > 0 && (
-                      <Badge variant="outline" className="text-xs">
-                        {cl.evidence_ids.length} evidence
-                      </Badge>
-                    )}
+          {letters.map((cl) => {
+            const isGenerating = cl.content === ""
+            return (
+              <Card
+                key={cl.id}
+                className={isGenerating ? "" : "cursor-pointer"}
+                onClick={isGenerating ? undefined : () => setExpanded(expanded === cl.id ? null : cl.id)}
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base">
+                      Cover Letter, {new Date(cl.created_at).toLocaleDateString()}
+                    </CardTitle>
+                    <div className="flex gap-1">
+                      {isGenerating && (
+                        <Badge variant="outline" className="text-xs flex items-center gap-1">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          Generating...
+                        </Badge>
+                      )}
+                      {cl.job_opportunity_id && (
+                        <Badge variant="secondary" className="text-xs">
+                          Job linked
+                        </Badge>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </CardHeader>
-              {expanded === cl.id ? (
-                <CardContent>
-                  <div className="bg-muted rounded-md p-4 text-sm whitespace-pre-wrap">
-                    {cl.content}
-                  </div>
-                </CardContent>
-              ) : (
-                <CardContent>
-                  <p className="text-sm text-muted-foreground line-clamp-2">{cl.content}</p>
-                </CardContent>
-              )}
-            </Card>
-          ))}
+                </CardHeader>
+                {isGenerating ? (
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">Cover letter is being generated. This may take a moment.</p>
+                  </CardContent>
+                ) : expanded === cl.id ? (
+                  <CardContent>
+                    <div className="bg-muted rounded-md p-4 text-sm whitespace-pre-wrap">
+                      {cl.content}
+                    </div>
+                  </CardContent>
+                ) : (
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground line-clamp-2">{cl.content}</p>
+                  </CardContent>
+                )}
+              </Card>
+            )
+          })}
         </div>
       )}
     </div>

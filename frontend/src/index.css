@@ -5,7 +5,7 @@
 
 :root {
   --radius: 0.625rem;
-  /* Light theme — warm orange accent */
+  /* Light theme, warm orange accent */
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0.01 40);
   --card: oklch(1 0 0);
@@ -41,7 +41,7 @@
 }
 
 .dark {
-  /* Dark theme — Dracula with pinkish-red accent */
+  /* Dark theme, Dracula with pinkish-red accent */
   --background: oklch(0.22 0.02 280);
   --foreground: oklch(0.98 0.005 100);
   --card: oklch(0.26 0.02 278);

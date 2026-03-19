@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from "react"
 import { useParams, useNavigate, Link } from "react-router-dom"
-import { Save, Trash2, Upload, X, Plus, Play, Briefcase, FileEdit } from "lucide-react"
-import { getProfile, updateProfile, deleteProfile, uploadCv } from "@/api/profiles"
+import { Save, Trash2, Upload, X, Plus, Play, Briefcase, FileEdit, Sparkles } from "lucide-react"
+import { getProfile, updateProfile, deleteProfile, uploadCv, extractSkillsFromCv } from "@/api/profiles"
 import type { Profile, ProfileUpdate } from "@/api/types"
+import { useProfiles } from "@/contexts/ProfileContext"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner"
 import { Button } from "@/components/ui/button"
@@ -26,6 +27,7 @@ import { toast } from "sonner"
 export default function ProfilePage() {
   const { profileId } = useParams()
   const navigate = useNavigate()
+  const { refresh: refreshProfiles } = useProfiles()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -49,8 +51,20 @@ export default function ProfilePage() {
 
   useEffect(() => { load() }, [load])
 
+  function canSave() {
+    return targets.length > 0 && skills.length > 0 && !!profile?.cv_path
+  }
+
   async function handleSave() {
     if (!profileId) return
+    if (!canSave()) {
+      const missing: string[] = []
+      if (targets.length === 0) missing.push("targets")
+      if (skills.length === 0) missing.push("skills")
+      if (!profile?.cv_path) missing.push("a CV")
+      toast.error(`Please add ${missing.join(", ")} before saving`)
+      return
+    }
     const data: ProfileUpdate = { name, targets, constraints, skills }
     const updated = await updateProfile(profileId, data)
     setProfile(updated)
@@ -60,15 +74,33 @@ export default function ProfilePage() {
   async function handleDelete() {
     if (!profileId) return
     await deleteProfile(profileId)
+    await refreshProfiles()
     toast.success("Profile deleted")
     navigate("/")
   }
 
   async function handleCvUpload(e: React.ChangeEvent<HTMLInputElement>) {
     if (!profileId || !e.target.files?.[0]) return
-    await uploadCv(profileId, e.target.files[0])
+    const updated = await uploadCv(profileId, e.target.files[0])
+    setProfile(updated)
     toast.success("CV uploaded")
-    load()
+  }
+
+  const [extracting, setExtracting] = useState(false)
+
+  async function handleExtractSkills() {
+    if (!profileId) return
+    setExtracting(true)
+    try {
+      const { skills: extracted } = await extractSkillsFromCv(profileId)
+      const merged = [...new Set([...skills, ...extracted])]
+      setSkills(merged)
+      toast.success(`Imported ${extracted.length} skills from CV`)
+    } catch {
+      toast.error("Failed to extract skills from CV")
+    } finally {
+      setExtracting(false)
+    }
   }
 
   if (loading) return <LoadingSpinner />
@@ -81,7 +113,7 @@ export default function ProfilePage() {
         description={`Created ${new Date(profile.created_at).toLocaleDateString()}`}
         actions={
           <div className="flex gap-2">
-            <Button onClick={handleSave}>
+            <Button onClick={handleSave} disabled={!canSave()}>
               <Save className="h-4 w-4 mr-2" /> Save
             </Button>
             <AlertDialog>
@@ -131,13 +163,26 @@ export default function ProfilePage() {
             ) : (
               <p className="text-sm text-muted-foreground mb-2">No CV uploaded</p>
             )}
-            <Label
-              htmlFor="cv-upload"
-              className="cursor-pointer inline-flex items-center gap-2 border rounded-md px-3 py-2 text-sm hover:bg-accent transition-colors"
-            >
-              <Upload className="h-4 w-4" /> Upload CV
-            </Label>
-            <input id="cv-upload" type="file" className="hidden" onChange={handleCvUpload} />
+            <div className="flex gap-2">
+              <Label
+                htmlFor="cv-upload"
+                className="cursor-pointer inline-flex items-center gap-2 border rounded-md px-3 py-2 text-sm hover:bg-accent transition-colors"
+              >
+                <Upload className="h-4 w-4" /> Upload CV
+              </Label>
+              <input id="cv-upload" type="file" className="hidden" onChange={handleCvUpload} />
+              {profile.cv_path && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExtractSkills}
+                  disabled={extracting}
+                >
+                  <Sparkles className="h-4 w-4 mr-2" />
+                  {extracting ? "Extracting..." : "Import Skills from CV"}
+                </Button>
+              )}
+            </div>
           </CardContent>
         </Card>
 
@@ -158,8 +203,8 @@ export default function ProfilePage() {
               </Link>
             </Button>
             <Button variant="outline" asChild>
-              <Link to={`/profiles/${profileId}/opportunities`}>
-                <Briefcase className="h-4 w-4 mr-2" /> Opportunities
+              <Link to={`/profiles/${profileId}/results`}>
+                <Briefcase className="h-4 w-4 mr-2" /> Results
               </Link>
             </Button>
             <Button variant="outline" asChild>

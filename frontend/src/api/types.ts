@@ -41,32 +41,101 @@ export interface Run {
   audit_path: string | null
 }
 
-export interface Opportunity {
+// --- 5 entity types (replace old Opportunity) ---
+
+export interface JobOpportunity {
   id: string
   profile_id: string
   run_id: string
-  opportunity_type: string
   title: string
-  source: string
+  company: string | null
   url: string | null
   description: string | null
-  evidence_ids: string[]
-  metadata: Record<string, unknown> | null
+  location: string | null
+  salary_range: string | null
+  source_query: string | null
   created_at: string
 }
 
+export interface Certification {
+  id: string
+  profile_id: string
+  run_id: string
+  title: string
+  provider: string | null
+  url: string | null
+  description: string | null
+  cost: string | null
+  duration: string | null
+  created_at: string
+}
+
+export interface Course {
+  id: string
+  profile_id: string
+  run_id: string
+  title: string
+  platform: string | null
+  url: string | null
+  description: string | null
+  cost: string | null
+  duration: string | null
+  created_at: string
+}
+
+export interface Event {
+  id: string
+  profile_id: string
+  run_id: string
+  title: string
+  organizer: string | null
+  url: string | null
+  description: string | null
+  event_date: string | null
+  location: string | null
+  created_at: string
+}
+
+export interface Group {
+  id: string
+  profile_id: string
+  run_id: string
+  title: string
+  platform: string | null
+  url: string | null
+  description: string | null
+  member_count: number | null
+  created_at: string
+}
+
+export interface Trend {
+  id: string
+  profile_id: string
+  run_id: string
+  title: string
+  category: string | null
+  url: string | null
+  description: string | null
+  relevance: string | null
+  source: string | null
+  created_at: string
+}
+
+export interface ResultTitleUpdate {
+  title: string
+}
+
 export interface CoverLetterCreate {
-  opportunity_id?: string | null
+  job_opportunity_id?: string | null
   jd_text?: string | null
 }
 
 export interface CoverLetter {
   id: string
   profile_id: string
-  opportunity_id: string | null
+  job_opportunity_id: string | null
   run_id: string | null
   content: string
-  evidence_ids: string[]
   created_at: string
 }
 
@@ -80,7 +149,6 @@ export interface SSEEvent {
   run_id?: string
   agent?: string
   status?: string
-  verifier_status?: string
   error?: string
   timestamp?: string
   mode?: string

@@ -58,9 +58,10 @@ function ThemeToggle() {
   )
 }
 
-export function Sidebar() {
+/** Shared navigation content used by both desktop sidebar and mobile sheet. */
+export function SidebarContent() {
   return (
-    <aside className="hidden lg:flex lg:flex-col lg:w-64 border-r bg-sidebar min-h-screen p-4">
+    <div className="flex flex-col h-full bg-sidebar p-4">
       <div className="mb-6">
         <h2 className="text-lg font-bold tracking-tight px-3 text-primary">AI Assistant</h2>
         <p className="text-xs text-muted-foreground px-3">Executive Network</p>
@@ -79,6 +80,14 @@ export function Sidebar() {
       <div className="mt-auto pt-4 border-t border-sidebar-border">
         <ThemeToggle />
       </div>
+    </div>
+  )
+}
+
+export function Sidebar() {
+  return (
+    <aside className="hidden lg:flex lg:flex-col lg:w-64 border-r bg-sidebar min-h-screen">
+      <SidebarContent />
     </aside>
   )
 }

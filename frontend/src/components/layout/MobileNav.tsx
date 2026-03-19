@@ -3,7 +3,7 @@ import { Menu, Moon, Sun } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet"
-import { Sidebar } from "./Sidebar"
+import { SidebarContent } from "./Sidebar"
 
 function MobileThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme()
@@ -41,7 +41,7 @@ export function MobileNav() {
         </SheetTrigger>
         <SheetContent side="left" className="p-0 w-64" onClick={() => setOpen(false)}>
           <SheetTitle className="sr-only">Navigation</SheetTitle>
-          <Sidebar />
+          <SidebarContent />
         </SheetContent>
       </Sheet>
       <h2 className="text-lg font-bold tracking-tight text-primary">AI Assistant</h2>

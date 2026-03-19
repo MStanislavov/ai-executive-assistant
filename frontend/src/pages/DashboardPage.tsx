@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Users, Play, CheckCircle, Plus, LayoutDashboard } from "lucide-react"
-import { listProfiles, createProfile } from "@/api/profiles"
+import { Users, Play, Plus, LayoutDashboard } from "lucide-react"
+import { createProfile } from "@/api/profiles"
 import { listAllRuns } from "@/api/runs"
-import type { Profile, Run } from "@/api/types"
+import type { Run } from "@/api/types"
+import { useProfiles } from "@/contexts/ProfileContext"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner"
 import { EmptyState } from "@/components/shared/EmptyState"
@@ -30,7 +31,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
 export default function DashboardPage() {
-  const [profiles, setProfiles] = useState<Profile[]>([])
+  const { profiles, loading: profilesLoading, refresh: refreshProfiles } = useProfiles()
   const [runs, setRuns] = useState<Run[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -38,11 +39,8 @@ export default function DashboardPage() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    Promise.all([listProfiles(), listAllRuns(10)])
-      .then(([p, r]) => {
-        setProfiles(p)
-        setRuns(r)
-      })
+    listAllRuns(10)
+      .then(setRuns)
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
@@ -52,13 +50,11 @@ export default function DashboardPage() {
     const profile = await createProfile({ name: newName.trim() })
     setDialogOpen(false)
     setNewName("")
+    await refreshProfiles()
     navigate(`/profiles/${profile.id}`)
   }
 
-  if (loading) return <LoadingSpinner />
-
-  const passCount = runs.filter((r) => r.verifier_status === "pass").length
-  const passRate = runs.length > 0 ? Math.round((passCount / runs.length) * 100) : 0
+  if (loading || profilesLoading) return <LoadingSpinner />
 
   if (profiles.length === 0) {
     return (
@@ -99,7 +95,7 @@ export default function DashboardPage() {
                 <DialogTitle>Create Profile</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 pt-2">
-                <div>
+                <div className="grid gap-3">
                   <Label htmlFor="name">Profile Name</Label>
                   <Input
                     id="name"
@@ -119,14 +115,9 @@ export default function DashboardPage() {
       />
 
       {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-3 mb-8">
+      <div className="grid gap-4 md:grid-cols-2 mb-8">
         <StatCard icon={<Users className="h-4 w-4" />} label="Profiles" value={profiles.length} />
         <StatCard icon={<Play className="h-4 w-4" />} label="Total Runs" value={runs.length} />
-        <StatCard
-          icon={<CheckCircle className="h-4 w-4" />}
-          label="Pass Rate"
-          value={`${passRate}%`}
-        />
       </div>
 
       {/* Profile Cards */}
@@ -166,7 +157,6 @@ export default function DashboardPage() {
                 <TableHead>Run ID</TableHead>
                 <TableHead>Mode</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Verifier</TableHead>
                 <TableHead>Started</TableHead>
               </TableRow>
             </TableHeader>
@@ -183,9 +173,6 @@ export default function DashboardPage() {
                   </TableCell>
                   <TableCell>
                     <StatusBadge status={r.status} />
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge status={r.verifier_status} />
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {r.started_at ? new Date(r.started_at).toLocaleString() : "-"}
@@ -242,7 +229,7 @@ function CreateProfileDialog({
           <DialogTitle>Create Profile</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 pt-2">
-          <div>
+          <div className="grid gap-3">
             <Label htmlFor="create-name">Profile Name</Label>
             <Input
               id="create-name"
